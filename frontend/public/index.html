@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TicketAR — Tu plataforma de eventos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="main-nav">
+  <div class="nav-inner">
+    <div class="logo" onclick="showPage('home')">Ticket<span>AR</span></div>
+    <div class="nav-links">
+      <a onclick="showPage('home')" class="nav-link">Eventos</a>
+      <a onclick="goToAdmin()" class="nav-link" id="admin-nav-link">Administración</a>
+      <span id="admin-user-pill" class="hidden"></span>
+      <button id="logout-btn" class="btn btn-outline btn-sm hidden" onclick="doLogout()">Salir</button>
+    </div>
+    <button class="hamburger" id="hamburger" onclick="toggleMenu()">☰</button>
+  </div>
+  <div class="mobile-menu hidden" id="mobile-menu">
+    <a onclick="showPage('home');toggleMenu()">Eventos</a>
+    <a onclick="goToAdmin();toggleMenu()">Administración</a>
+  </div>
+</nav>
+
+<!-- ══════════════ HOME ══════════════ -->
+<div id="page-home" class="page active">
+  <section class="hero">
+    <div class="hero-bg-pattern"></div>
+    <div class="hero-content">
+      <div class="hero-badge">🎟️ La plataforma de tickets de Argentina</div>
+      <h1>Encontrá y comprá<br><span class="accent">entradas online</span></h1>
+      <p>Pagá con Mercado Pago, tarjeta o transferencia.<br>Recibí tus entradas al instante.</p>
+      <button class="btn btn-hero" onclick="document.getElementById('events-section').scrollIntoView({behavior:'smooth'})">
+        Ver todos los eventos →
+      </button>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><span class="stat-num" id="stat-events">0</span><span>Eventos activos</span></div>
+      <div class="hero-stat"><span class="stat-num" id="stat-tickets">0</span><span>Entradas vendidas</span></div>
+      <div class="hero-stat"><span class="stat-num">100%</span><span>Pago seguro</span></div>
+    </div>
+  </section>
+
+  <section class="events-section" id="events-section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Próximos eventos</h2>
+        <div class="filter-bar">
+          <input type="text" id="search-events" placeholder="Buscar eventos..." oninput="filterEvents(this.value)" class="search-input">
+        </div>
+      </div>
+      <div class="events-grid" id="events-grid">
+        <div class="loading-events">Cargando eventos...</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════ EVENT DETAIL ══════════════ -->
+<div id="page-event" class="page">
+  <div class="container" style="padding-top:2rem">
+    <button class="back-btn" onclick="showPage('home')">← Volver a eventos</button>
+    <div class="event-detail-layout">
+      <div class="event-detail-main" id="event-detail-main"></div>
+      <div class="event-detail-sidebar">
+        <div class="ticket-box" id="ticket-box">
+          <h3>Seleccioná tus entradas</h3>
+          <div id="stages-list"></div>
+          <div id="selection-summary" class="hidden"></div>
+          <button class="btn btn-primary btn-block" id="btn-checkout" disabled onclick="goToCheckout()">
+            Continuar →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ CHECKOUT ══════════════ -->
+<div id="page-checkout" class="page">
+  <div class="container" style="padding-top:2rem">
+    <button class="back-btn" onclick="showPage('event')">← Volver al evento</button>
+    <h1 class="page-title">Completá tu compra</h1>
+    <div class="checkout-layout">
+      <div class="checkout-main">
+        <!-- Datos personales -->
+        <div class="checkout-card">
+          <div class="card-header"><span class="step-num">1</span> Tus datos</div>
+          <div class="form-row">
+            <div class="form-group"><label>Nombre *</label><input id="c-nombre" type="text" placeholder="Juan"></div>
+            <div class="form-group"><label>Apellido *</label><input id="c-apellido" type="text" placeholder="García"></div>
+          </div>
+          <div class="form-group"><label>Email *</label><input id="c-email" type="email" placeholder="juan@email.com"></div>
+          <div class="form-group"><label>Teléfono</label><input id="c-tel" type="tel" placeholder="+54 11 1234-5678"></div>
+        </div>
+
+        <!-- Método de pago -->
+        <div class="checkout-card">
+          <div class="card-header"><span class="step-num">2</span> Método de pago</div>
+          <div class="pay-methods">
+            <div class="pay-method selected" id="pm-mp" onclick="selectPay('mp')">
+              <div class="pm-icon">📱</div>
+              <div class="pm-label">Mercado Pago QR</div>
+              <div class="pm-sub">Crédito, débito, cuenta MP</div>
+            </div>
+            <div class="pay-method" id="pm-card" onclick="selectPay('card')">
+              <div class="pm-icon">💳</div>
+              <div class="pm-label">Tarjeta</div>
+              <div class="pm-sub">Crédito o débito</div>
+            </div>
+            <div class="pay-method" id="pm-transfer" onclick="selectPay('transfer')">
+              <div class="pm-icon">🏦</div>
+              <div class="pm-label">Transferencia</div>
+              <div class="pm-sub">CBU / Alias</div>
+            </div>
+          </div>
+
+          <!-- MP Details -->
+          <div id="pd-mp" class="pay-detail">
+            <div class="mp-qr-wrap">
+              <div class="mp-qr-header">
+                <img src="https://http2.mlstatic.com/frontend-assets/ml-web-navigation/ui-navigation/5.21.22/mercadopago/logo__large@2x.png" 
+                     alt="Mercado Pago" style="height:28px;filter:brightness(0) invert(1)">
+              </div>
+              <div id="mp-qr-canvas"></div>
+              <p class="mp-qr-hint">Escaneá con la app de Mercado Pago</p>
+            </div>
+            <div class="mp-methods-grid">
+              <span>💳 Tarjeta crédito</span><span>💳 Débito</span>
+              <span>💰 Cuenta MP</span><span>🏦 Efectivo</span>
+            </div>
+          </div>
+
+          <!-- Card Details -->
+          <div id="pd-card" class="pay-detail hidden">
+            <div class="form-group"><label>Número de tarjeta</label>
+              <input type="text" placeholder="1234 5678 9012 3456" maxlength="19" oninput="fmtCard(this)">
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Vencimiento</label><input type="text" placeholder="MM/AA" maxlength="5"></div>
+              <div class="form-group"><label>CVV</label><input type="text" placeholder="123" maxlength="4"></div>
+            </div>
+            <div class="form-group"><label>Nombre del titular</label><input type="text" placeholder="JUAN GARCIA"></div>
+            <div class="secure-badge">🔒 Pago procesado por Mercado Pago con encriptación SSL</div>
+          </div>
+
+          <!-- Transfer Details -->
+          <div id="pd-transfer" class="pay-detail hidden">
+            <div class="transfer-box">
+              <div class="transfer-row"><span>CBU</span><strong>0000003100014301234567</strong></div>
+              <div class="transfer-row"><span>Alias</span><strong>TICKETAR.EVENTOS</strong></div>
+              <div class="transfer-row"><span>Titular</span><strong>TicketAR S.A.</strong></div>
+              <div class="transfer-row"><span>CUIT</span><strong>30-12345678-9</strong></div>
+            </div>
+            <p class="transfer-note">Enviá el comprobante a <strong>pagos@ticketar.com</strong> con el número de orden</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Order Summary -->
+      <div class="checkout-sidebar">
+        <div class="order-summary-card">
+          <h3>Resumen del pedido</h3>
+          <div id="summary-event-name" class="summary-event"></div>
+          <div id="summary-lines"></div>
+          <div class="summary-total">
+            <span>Total</span>
+            <span id="summary-total-val"></span>
+          </div>
+          <button class="btn btn-primary btn-block" onclick="submitOrder()" id="btn-pay">
+            Confirmar y pagar
+          </button>
+          <p class="terms-note">Al pagar aceptás los <a href="#">términos y condiciones</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SUCCESS ══════════════ -->
+<div id="page-success" class="page">
+  <div class="container" style="padding:3rem 1rem;max-width:720px">
+    <div class="success-header">
+      <div class="success-icon-wrap">✅</div>
+      <h1>¡Compra exitosa!</h1>
+      <p id="success-subtitle">Tus entradas están listas</p>
+    </div>
+    <div id="generated-tickets"></div>
+    <div class="success-actions">
+      <button class="btn btn-primary" onclick="printTickets()">🖨 Imprimir entradas</button>
+      <button class="btn btn-outline" onclick="showPage('home')">Ver más eventos</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADMIN LOGIN ══════════════ -->
+<div id="page-admin-login" class="page">
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">Ticket<span>AR</span></div>
+      <h2>Panel de administración</h2>
+      <div id="login-error" class="alert alert-danger hidden"></div>
+      <div class="form-group"><label>Usuario</label>
+        <input id="login-u" type="text" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="form-group"><label>Contraseña</label>
+        <input id="login-p" type="password" placeholder="••••••••" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="doLogin()">Ingresar</button>
+      <p class="login-hint">admin/admin123 (superadmin) · gerente/ger123 (admin) · vendedor/vend123</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADMIN PANEL ══════════════ -->
+<div id="page-admin" class="page">
+  <div class="admin-layout">
+    <aside class="sidebar">
+      <div class="sidebar-logo">Ticket<span>AR</span></div>
+      <div class="sidebar-user" id="sidebar-user"></div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <!-- generado dinámicamente por buildAdminUI() según el rol -->
+      </nav>
+      <button class="sidebar-logout" onclick="doLogout()">← Salir</button>
+    </aside>
+    <main class="admin-main" id="admin-main"></main>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal(event)">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
