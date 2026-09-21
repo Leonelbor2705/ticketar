@@ -480,8 +480,11 @@ async function createEvent() {
   const sPrice=parseFloat(document.getElementById('ne-sprice').value);
   const sQty=parseInt(document.getElementById('ne-sqty').value);
   if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return alert('Completá todos los campos (*)');
-  try{await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,stages:[{name:sName,price:sPrice,quantity:sQty}]});}
-  catch(e){DEMO_EVENTS.push({id:DEMO_EVENTS.length+100,title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,active:1,stages:[{id:Date.now(),name:sName,price:sPrice,quantity:sQty,sold:0,active:1}]});state.events=DEMO_EVENTS;renderEvents(state.events);}
+  try{
+    await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,stages:[{name:sName,price:sPrice,quantity:sQty}]});
+  }catch(e){
+    return alert('No se pudo crear el evento: ' + e.message);
+  }
   closeModal(); renderAdminEvents(document.getElementById('admin-main')); alert('Evento creado');
 }
 
