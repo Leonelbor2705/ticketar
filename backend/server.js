@@ -39,8 +39,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ==================== STATIC FILES ====================
-// Serve frontend from ../frontend/public
-const frontendPath = path.join(__dirname, '../frontend/public');
+// Serve frontend from ./public
+const frontendPath = path.join(__dirname, 'public');
 app.use(express.static(frontendPath));
 
 // ==================== API ROUTES ====================
