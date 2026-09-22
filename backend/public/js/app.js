@@ -31,7 +31,8 @@ let state = {
   currentEvent: null,
   cart: {},
   currentAdmin: null,
-  adminSection: 'dashboard'
+  adminSection: 'dashboard',
+  filters: { q: '', city: '', range: 'all' }
 };
 
 
@@ -62,8 +63,16 @@ async function loadEvents() {
     state.events = [];
     document.getElementById('events-grid').innerHTML = '<div class="loading-events">No se pudieron cargar los eventos. Intentá recargar la página.</div>';
   }
+  populateCityFilter(state.events);
   renderEvents(state.events);
   updateHeroStats();
+}
+
+function populateCityFilter(events) {
+  const sel = document.getElementById('filter-city');
+  if (!sel) return;
+  const cities = [...new Set(events.map(e=>e.city).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Todas las ciudades</option>' + cities.map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
 function updateHeroStats() {
@@ -81,7 +90,7 @@ function animCount(id, target) {
 
 function renderEvents(events) {
   const grid = document.getElementById('events-grid');
-  if (!events.length) { grid.innerHTML='<div class="loading-events">No hay eventos disponibles</div>'; return; }
+  if (!events.length) { grid.innerHTML='<div class="loading-events">No hay eventos que coincidan con tu búsqueda</div>'; return; }
   grid.innerHTML = events.map(e=>{
     const act=(e.stages||[]).filter(s=>s.active);
     const min=act.length?Math.min(...act.map(s=>s.price)):0;
@@ -89,8 +98,15 @@ function renderEvents(events) {
     const ts=(e.stages||[]).reduce((s,st)=>s+(st.sold||0),0);
     const tq=(e.stages||[]).reduce((s,st)=>s+(st.quantity||0),0);
     const pct=tq?Math.round(ts/tq*100):0;
+    const avail=tq-ts;
+    const soldOut = tq>0 && avail<=0;
+    const lowStock = !soldOut && tq>0 && avail<=Math.max(10,tq*0.05);
+    const img = e.image_url
+      ? `<div class="event-img event-img-photo"><img src="${e.image_url}" alt="${e.title}" loading="lazy" decoding="async"></div>`
+      : `<div class="event-img">${e.emoji||'🎪'}</div>`;
     return `<div class="event-card" onclick="openEvent(${e.id})">
-      <div class="event-img">${e.emoji||'🎪'}</div>
+      ${img}
+      ${soldOut?'<span class="stock-flag stock-sold">Agotado</span>':lowStock?'<span class="stock-flag stock-low">Últimas entradas</span>':''}
       <div class="event-body">
         <span class="stage-badge ${getStageBadge(first?.name)}">${first?.name||'General'}</span>
         <h3>${e.title}</h3>
@@ -98,15 +114,55 @@ function renderEvents(events) {
         <div class="event-price"><span class="from-label">desde</span>$${min.toLocaleString('es-AR')}</div>
         <div class="progress-wrap">
           <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
-          <div class="progress-label">${pct}% vendido · ${tq-ts} disponibles</div>
+          <div class="progress-label">${pct}% vendido · ${avail} disponibles</div>
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
-function filterEvents(q) {
-  renderEvents(q ? state.events.filter(e=>(e.title+e.venue+e.city+e.description).toLowerCase().includes(q.toLowerCase())) : state.events);
+let _filterDebounce;
+function onFilterChange() {
+  clearTimeout(_filterDebounce);
+  _filterDebounce = setTimeout(applyFilters, 200);
+}
+
+function setDateFilter(range) {
+  state.filters.range = range;
+  document.querySelectorAll('.date-pill').forEach(p=>p.classList.toggle('active', p.dataset.range===range));
+  applyFilters();
+}
+
+function inDateRange(dateStr, range) {
+  if (range==='all' || !dateStr) return true;
+  const d = new Date(dateStr+'T00:00:00');
+  const now = new Date(); now.setHours(0,0,0,0);
+  if (range==='today') return d.getTime()===now.getTime();
+  if (range==='weekend') {
+    const day = now.getDay();
+    const satOffset = (6-day+7)%7, sunOffset = (7-day)%7 || 7;
+    const sat = new Date(now); sat.setDate(now.getDate()+satOffset);
+    const sun = new Date(now); sun.setDate(now.getDate()+sunOffset);
+    return d>=now && d>=sat && d<=sun;
+  }
+  if (range==='month') {
+    const end = new Date(now); end.setDate(now.getDate()+30);
+    return d>=now && d<=end;
+  }
+  return true;
+}
+
+function applyFilters() {
+  const q = (document.getElementById('search-events')?.value||'').toLowerCase().trim();
+  const city = document.getElementById('filter-city')?.value||'';
+  state.filters.q = q; state.filters.city = city;
+  const filtered = state.events.filter(e => {
+    if (q && !(e.title+e.venue+e.city+(e.description||'')).toLowerCase().includes(q)) return false;
+    if (city && e.city !== city) return false;
+    if (!inDateRange(e.date, state.filters.range)) return false;
+    return true;
+  });
+  renderEvents(filtered);
 }
 
 function getStageBadge(name='') {

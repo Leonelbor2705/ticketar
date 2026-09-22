@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -54,8 +54,17 @@
       <div class="section-header">
         <h2>Próximos eventos</h2>
         <div class="filter-bar">
-          <input type="text" id="search-events" placeholder="Buscar eventos..." oninput="filterEvents(this.value)" class="search-input">
+          <input type="text" id="search-events" placeholder="Buscar eventos, lugares..." oninput="onFilterChange()" class="search-input">
+          <select id="filter-city" class="filter-select" onchange="onFilterChange()">
+            <option value="">Todas las ciudades</option>
+          </select>
         </div>
+      </div>
+      <div class="date-pills" id="date-pills">
+        <button class="date-pill active" data-range="all" onclick="setDateFilter('all')">Todos</button>
+        <button class="date-pill" data-range="today" onclick="setDateFilter('today')">Hoy</button>
+        <button class="date-pill" data-range="weekend" onclick="setDateFilter('weekend')">Este finde</button>
+        <button class="date-pill" data-range="month" onclick="setDateFilter('month')">Este mes</button>
       </div>
       <div class="events-grid" id="events-grid">
         <div class="loading-events">Cargando eventos...</div>

@@ -160,6 +160,21 @@ h3 { font-size: 1.15rem; font-weight: 700; }
   transition: border-color .2s;
 }
 .search-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(3,48,145,.1); }
+.filter-bar { display: flex; gap: .6rem; flex-wrap: wrap; }
+.filter-select {
+  padding: 9px 16px; border: 1.5px solid var(--gray-200); border-radius: 30px;
+  font-size: .9rem; outline: none; font-family: 'Figtree', sans-serif;
+  background: var(--white); color: var(--gray-800); cursor: pointer; transition: border-color .2s;
+}
+.filter-select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(3,48,145,.1); }
+.date-pills { display: flex; gap: .5rem; flex-wrap: wrap; margin: -1rem 0 1.8rem; }
+.date-pill {
+  padding: 7px 16px; border-radius: 30px; border: 1.5px solid var(--gray-200);
+  background: var(--white); color: var(--gray-600); font-size: .82rem; font-weight: 600;
+  cursor: pointer; font-family: 'Figtree', sans-serif; transition: all .18s;
+}
+.date-pill:hover { border-color: var(--blue); color: var(--blue); }
+.date-pill.active { background: var(--blue); border-color: var(--blue); color: var(--white); }
 .events-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; }
 .loading-events { grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--gray-400); }
 
@@ -167,12 +182,22 @@ h3 { font-size: 1.15rem; font-weight: 700; }
   background: var(--white); border-radius: var(--radius-lg);
   box-shadow: var(--shadow); overflow: hidden; cursor: pointer;
   transition: transform .22s, box-shadow .22s; border: 1.5px solid var(--gray-100);
+  position: relative;
 }
 .event-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
 .event-img {
   height: 160px; display: flex; align-items: center; justify-content: center;
   font-size: 4rem; background: linear-gradient(135deg, var(--blue) 0%, var(--blue-light) 100%);
 }
+.event-img-photo { padding: 0; overflow: hidden; }
+.event-img-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.stock-flag {
+  position: absolute; top: 12px; right: 12px; padding: 4px 12px; border-radius: 20px;
+  font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .3px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2);
+}
+.stock-sold { background: var(--gray-800); color: var(--white); }
+.stock-low { background: var(--red); color: var(--white); }
 .event-body { padding: 1.2rem; }
 .event-body h3 { font-size: 1rem; font-weight: 800; margin-bottom: .4rem; color: var(--gray-900); }
 .event-meta { font-size: .82rem; color: var(--gray-600); margin-bottom: .8rem; line-height: 1.7; }
@@ -500,12 +525,19 @@ h3 { font-size: 1.15rem; font-weight: 700; }
   .table-card { overflow-x: auto; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .ticket-card-bottom { flex-direction: column; }
+  .ticket-box, .order-summary-card { position: static; }
+  .section-header { flex-direction: column; align-items: stretch; }
+  .filter-bar { flex-direction: column; }
+  .search-input, .filter-select { width: 100%; }
+  .date-pills { overflow-x: auto; flex-wrap: nowrap; padding-bottom: .3rem; margin-top: 1rem; }
+  .date-pill { flex-shrink: 0; }
 }
 
 @media (max-width: 480px) {
   .hero h1 { font-size: 1.8rem; }
   .hero-stats { flex-direction: column; gap: 1rem; }
   .stats-grid { grid-template-columns: 1fr; }
+  .events-grid { grid-template-columns: 1fr; }
 }
 
 /* ══ PRINT ══ */

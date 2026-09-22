@@ -39,9 +39,17 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ==================== STATIC FILES ====================
-// Serve frontend from ./public
+// Serve frontend from ./public. Assets (css/js) get long cache since filenames
+// don't change on deploy; index.html stays no-cache so redeploys are picked up.
 const frontendPath = path.join(__dirname, 'public');
-app.use(express.static(frontendPath));
+app.use(express.static(frontendPath, {
+  index: false,
+  setHeaders: (res, filePath) => {
+    if (/\.(css|js)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  }
+}));
 
 // ==================== API ROUTES ====================
 app.use('/api/auth', authLimiter);
