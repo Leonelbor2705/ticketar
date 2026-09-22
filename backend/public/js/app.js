@@ -34,38 +34,6 @@ let state = {
   adminSection: 'dashboard'
 };
 
-// Demo users con 3 roles
-let DEMO_USERS = [
-  { id:1, username:'admin',    password:'admin123', role:'superadmin', name:'Super Administrador', email:'super@ticketar.com', active:1 },
-  { id:2, username:'gerente',  password:'ger123',   role:'admin',      name:'Gerente Eventos',     email:'gerente@ticketar.com', active:1 },
-  { id:3, username:'vendedor', password:'vend123',  role:'vendedor',   name:'Carlos Sánchez',      email:'carlos@ticketar.com', active:1 },
-];
-
-const DEMO_EVENTS = [
-  { id:1, emoji:'🎵', title:'Festival de Música Electrónica', date:'2025-08-14', time:'22:00',
-    venue:'Centro Cultural Konex', city:'Buenos Aires', active:1,
-    description:'La noche más esperada del año con los mejores DJs nacionales e internacionales.',
-    stages:[{id:1,name:'Early Bird',price:3500,quantity:100,sold:87,active:1},
-            {id:2,name:'Preventa',price:5500,quantity:200,sold:142,active:1},
-            {id:3,name:'General',price:7500,quantity:300,sold:0,active:0}] },
-  { id:2, emoji:'🎭', title:'Obra: La Gaviota', date:'2025-07-22', time:'20:30',
-    venue:'Teatro San Martín', city:'CABA', active:1,
-    description:'Clásico de Chéjov interpretado por el elenco del Teatro San Martín.',
-    stages:[{id:4,name:'Preventa',price:4000,quantity:80,sold:60,active:1},
-            {id:5,name:'General',price:6000,quantity:120,sold:30,active:1}] },
-  { id:3, emoji:'🏋️', title:'Expo Fitness 2025', date:'2025-09-05', time:'10:00',
-    venue:'La Rural', city:'Palermo', active:1,
-    description:'El evento de fitness y bienestar más grande de Argentina.',
-    stages:[{id:6,name:'Early Bird',price:1200,quantity:500,sold:499,active:1},
-            {id:7,name:'General',price:2500,quantity:1000,sold:200,active:1},
-            {id:8,name:'VIP',price:8000,quantity:50,sold:10,active:1}] }
-];
-
-const DEMO_ORDERS = [
-  {id:'ORD-DEMO01',event_title:'Festival de Música Electrónica',buyer_name:'María',buyer_lastname:'González',buyer_email:'maria@email.com',total:7000,payment_status:'paid',payment_method:'mp',created_at:'2025-04-10'},
-  {id:'ORD-DEMO02',event_title:'Obra: La Gaviota',buyer_name:'Roberto',buyer_lastname:'Pérez',buyer_email:'rob@email.com',total:12000,payment_status:'paid',payment_method:'card',created_at:'2025-04-11'},
-  {id:'ORD-DEMO03',event_title:'Expo Fitness 2025',buyer_name:'Laura',buyer_lastname:'Martín',buyer_email:'lau@email.com',total:10500,payment_status:'pending',payment_method:'transfer',created_at:'2025-04-12'}
-];
 
 function can(accion) {
   if (!state.currentAdmin) return false;
@@ -89,7 +57,11 @@ function toggleMenu() { document.getElementById('mobile-menu')?.classList.toggle
 // ══════════════════════════════════════════
 async function loadEvents() {
   try { state.events = await API.getEvents(); }
-  catch(e) { state.events = DEMO_EVENTS; }
+  catch(e) {
+    console.error('Error cargando eventos:', e);
+    state.events = [];
+    document.getElementById('events-grid').innerHTML = '<div class="loading-events">No se pudieron cargar los eventos. Intentá recargar la página.</div>';
+  }
   renderEvents(state.events);
   updateHeroStats();
 }
@@ -151,8 +123,8 @@ function getStageBadge(name='') {
 async function openEvent(id) {
   state.cart={};
   try { state.currentEvent=await API.getEvent(id); }
-  catch(e){ state.currentEvent=[...state.events,...DEMO_EVENTS].find(ev=>ev.id===id); }
-  if(!state.currentEvent) return;
+  catch(e){ console.error('Error cargando evento:', e); state.currentEvent=null; }
+  if(!state.currentEvent) return alert('No se pudo cargar el evento');
   renderEventDetail();
   showPage('event');
 }
@@ -351,11 +323,9 @@ async function doLogin() {
     const res=await API.login(u,p); API.setToken(res.token); state.currentAdmin=res.user;
     buildAdminUI(); showPage('admin'); adminSection('dashboard');
   } catch(e) {
-    const found=DEMO_USERS.find(x=>x.username===u&&x.password===p&&x.active);
-    if(found){
-      state.currentAdmin={id:found.id,username:found.username,name:found.name,role:found.role,email:found.email};
-      API.setToken('DEMO_TOKEN'); buildAdminUI(); showPage('admin'); adminSection('dashboard');
-    } else { errEl.textContent='Usuario o contraseña incorrectos'; errEl.classList.remove('hidden'); }
+    console.error('Error de login:', e);
+    errEl.textContent = e.message || 'Usuario o contraseña incorrectos';
+    errEl.classList.remove('hidden');
   }
 }
 
@@ -411,15 +381,9 @@ async function renderDashboard(c) {
         <div class="stat-card gray"><div class="stat-label">Pendientes</div><div class="stat-value">${s.pending_orders||0}</div></div>
       </div>${buildOrdersTable(data.recentOrders||[])}`;
   } catch(e) {
-    const rev=DEMO_ORDERS.filter(o=>o.payment_status==='paid').reduce((s,o)=>s+o.total,0);
+    console.error('Error cargando dashboard:', e);
     c.innerHTML=`<div class="admin-page-title">Dashboard</div>
-      <div class="alert alert-info" style="margin-bottom:1rem">Modo demo — levantá el backend para datos reales</div>
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Ingresos</div><div class="stat-value">$${rev.toLocaleString('es-AR')}</div></div>
-        <div class="stat-card red"><div class="stat-label">Eventos</div><div class="stat-value">${DEMO_EVENTS.length}</div></div>
-        <div class="stat-card green"><div class="stat-label">Pagadas</div><div class="stat-value">${DEMO_ORDERS.filter(o=>o.payment_status==='paid').length}</div></div>
-        <div class="stat-card gray"><div class="stat-label">Pendientes</div><div class="stat-value">${DEMO_ORDERS.filter(o=>o.payment_status==='pending').length}</div></div>
-      </div>${buildOrdersTable(DEMO_ORDERS)}`;
+      <div class="alert alert-danger">No se pudo cargar el dashboard: ${e.message||'error de conexión'}. ${e.message&&e.message.toLowerCase().includes('token')?'Tu sesión expiró, salí y volvé a entrar.':'Intentá recargar la página.'}</div>`;
   }
 }
 
@@ -443,7 +407,11 @@ function buildOrdersTable(orders) {
 // ══════════════════════════════════════════
 async function renderAdminEvents(c) {
   let events=[];
-  try{events=await API.getAllEvents();}catch(e){events=DEMO_EVENTS;}
+  try{events=await API.getAllEvents();}catch(e){
+    console.error('Error cargando eventos:', e);
+    c.innerHTML=`<div class="admin-page-title">Gestión de Eventos</div><div class="alert alert-danger">No se pudieron cargar los eventos: ${e.message||'error de conexión'}</div>`;
+    return;
+  }
   const canEdit=can('events');
   c.innerHTML=`<div class="admin-header-row">
     <div class="admin-page-title" style="margin:0">Gestión de Eventos</div>
@@ -520,7 +488,7 @@ async function createEvent() {
 }
 
 async function showStagesModal(evId) {
-  let events=[]; try{events=await API.getAllEvents();}catch(e){events=DEMO_EVENTS;}
+  let events=[]; try{events=await API.getAllEvents();}catch(e){console.error('Error cargando eventos:',e); return alert('No se pudieron cargar las etapas: '+(e.message||'error de conexión'));}
   const ev=events.find(e=>e.id===evId); if(!ev) return;
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">${ev.emoji} ${ev.title} — Etapas</div>
@@ -548,7 +516,12 @@ async function showStagesModal(evId) {
 }
 
 async function toggleStage(evId,stId,newActive) {
-  try{await API.updateStage(evId,stId,{active:newActive});}catch(e){const ev=DEMO_EVENTS.find(e=>e.id===evId);const st=ev?.stages.find(s=>s.id===stId);if(st) st.active=newActive;}
+  try{
+    await API.updateStage(evId,stId,{active:newActive});
+  }catch(e){
+    console.error('Error actualizando etapa:', e);
+    return alert('Error: ' + (e.message || 'no se pudo actualizar la etapa'));
+  }
   showStagesModal(evId);
 }
 async function addStageToEvent(evId) {
@@ -556,7 +529,12 @@ async function addStageToEvent(evId) {
   const price=parseFloat(document.getElementById('ns-price').value);
   const qty=parseInt(document.getElementById('ns-qty').value);
   if(!name||!price||!qty) return alert('Completá todos los campos');
-  try{await API.addStage(evId,{name,price,quantity:qty});}catch(e){const ev=DEMO_EVENTS.find(e=>e.id===evId);if(ev) ev.stages.push({id:Date.now(),name,price,quantity:qty,sold:0,active:1});}
+  try{
+    await API.addStage(evId,{name,price,quantity:qty});
+  }catch(e){
+    console.error('Error agregando etapa:', e);
+    return alert('Error: ' + (e.message || 'no se pudo agregar la etapa'));
+  }
   showStagesModal(evId);
 }
 async function deactivateEvent(id) {
@@ -567,8 +545,6 @@ async function deactivateEvent(id) {
     alert('Evento desactivado');
   }catch(e){
     console.error('Error desactivando evento:', e);
-    const ev=DEMO_EVENTS.find(e=>e.id===id);
-    if(ev) ev.active=0;
     alert('Error al desactivar: ' + (e.message || 'Intenta de nuevo'));
   }
 }
@@ -585,7 +561,11 @@ async function renderAdminOrders(c) {
       <div id="orders-wrap" style="overflow-x:auto"><div style="padding:2rem;text-align:center;color:var(--gray-400)">Cargando...</div></div>
     </div>`;
   let orders=[];
-  try{const r=await API.getOrders({limit:200});orders=r.orders||[];}catch(e){orders=DEMO_ORDERS;}
+  try{const r=await API.getOrders({limit:200});orders=r.orders||[];}catch(e){
+    console.error('Error cargando órdenes:', e);
+    document.getElementById('orders-wrap').innerHTML=`<div class="alert alert-danger">No se pudieron cargar las órdenes: ${e.message||'error de conexión'}</div>`;
+    return;
+  }
   window._orders=orders; paintOrders(orders);
 }
 
@@ -613,7 +593,12 @@ function filterOrders(q) {
 }
 async function confirmPago(id) {
   if(!confirm(`¿Confirmar pago de la orden ${id}?`)) return;
-  try{await API.confirmOrder(id);}catch(e){}
+  try{
+    await API.confirmOrder(id);
+  }catch(e){
+    console.error('Error confirmando pago:', e);
+    return alert('Error: ' + (e.message || 'no se pudo confirmar el pago'));
+  }
   const o=(window._orders||[]).find(x=>x.id===id); if(o) o.payment_status='paid';
   paintOrders(window._orders||[]);
 }
@@ -622,7 +607,6 @@ async function confirmPago(id) {
 // SCANNER
 // ══════════════════════════════════════════
 function renderScanner(c) {
-  const used=new Set();
   c.innerHTML=`<div class="admin-page-title">Validar Entradas — Control de Acceso</div>
     <div class="scanner-card">
       <h2>Escaneo de QR</h2>
@@ -643,9 +627,8 @@ function renderScanner(c) {
       else if(data.already_used) res.innerHTML=`<div class="scan-result scan-used">⚠️ YA UTILIZADA<div class="scan-detail">${data.ticket?.buyer||''}</div></div>`;
       else res.innerHTML=`<div class="scan-result scan-err">❌ ${data.reason||'Inválida'}</div>`;
     }catch(e){
-      if(used.has(code)) res.innerHTML=`<div class="scan-result scan-used">⚠️ YA UTILIZADA en esta sesión</div>`;
-      else if(code.startsWith('TK-')){used.add(code);res.innerHTML=`<div class="scan-result scan-ok">✅ VÁLIDA (Demo)<div class="scan-detail">Código: <strong>${code}</strong></div></div>`;}
-      else res.innerHTML=`<div class="scan-result scan-err">❌ Código no encontrado</div>`;
+      console.error('Error validando ticket:', e);
+      res.innerHTML=`<div class="scan-result scan-err">❌ Error de conexión — no se pudo validar (${e.message||'reintentá'})</div>`;
     }
     document.getElementById('scan-input').value=''; document.getElementById('scan-input').focus();
   };
@@ -658,8 +641,13 @@ async function renderAdminUsers(c) {
   const isSA=state.currentAdmin?.role==='superadmin';
   const isA=state.currentAdmin?.role==='admin';
   let users=[];
-  try{users=await API.getUsers();}catch(e){users=DEMO_USERS.filter(u=>u.active);}
+  try{users=await API.getUsers();}catch(e){
+    console.error('Error cargando usuarios:', e);
+    c.innerHTML=`<div class="admin-page-title">Gestión de Usuarios</div><div class="alert alert-danger">No se pudieron cargar los usuarios: ${e.message||'error de conexión'}</div>`;
+    return;
+  }
   const visible=isSA?users:users.filter(u=>u.role!=='superadmin');
+  window._users=users;
   c.innerHTML=`<div class="admin-header-row">
     <div class="admin-page-title" style="margin:0">Gestión de Usuarios</div>
     ${(isSA||isA)?`<button class="btn btn-primary" onclick="showCreateUserModal()">+ Nuevo Usuario</button>`:''}
@@ -703,7 +691,7 @@ function showCreateUserModal() {
 }
 
 function showEditUserModal(id) {
-  const u=DEMO_USERS.find(x=>x.id===id)||{};
+  const u=(window._users||[]).find(x=>x.id===id)||{};
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Editar: ${u.username}</div>
     <div class="form-group"><label>Nombre</label><input id="eu-name" value="${u.name||''}"></div>
@@ -731,8 +719,12 @@ async function updateUser(id) {
   const pass=document.getElementById('eu-pass').value;
   const role=document.getElementById('eu-role').value;
   const active=parseInt(document.getElementById('eu-active').value);
-  try{await API.updateUser(id,{name,email,role,active,...(pass?{password:pass}:{})});}
-  catch(e){const u=DEMO_USERS.find(x=>x.id===id);if(u){u.name=name;u.email=email;u.role=role;u.active=active;if(pass)u.password=pass;}}
+  try{
+    await API.updateUser(id,{name,email,role,active,...(pass?{password:pass}:{})});
+  }catch(e){
+    console.error('Error actualizando usuario:', e);
+    return alert('Error: ' + (e.message || 'no se pudo actualizar el usuario'));
+  }
   closeModal(); renderAdminUsers(document.getElementById('admin-main'));
 }
 
@@ -743,22 +735,38 @@ async function createUser() {
   const email=document.getElementById('nu-email').value.trim();
   const role=document.getElementById('nu-role').value;
   if(!name||!username||!password) return alert('Nombre, usuario y contraseña son obligatorios');
-  try{await API.createUser({name,username,password,email,role});}
-  catch(e){if(DEMO_USERS.find(u=>u.username===username)) return alert('Ese usuario ya existe');DEMO_USERS.push({id:DEMO_USERS.length+1,username,password,name,email,role,active:1});}
+  try{
+    await API.createUser({name,username,password,email,role});
+  }catch(e){
+    console.error('Error creando usuario:', e);
+    return alert('Error: ' + (e.message || 'no se pudo crear el usuario'));
+  }
   closeModal(); renderAdminUsers(document.getElementById('admin-main')); alert('Usuario creado');
 }
 
 async function deleteUser(id) {
   if(id===state.currentAdmin?.id) return alert('No podés eliminarte a vos mismo');
   if(!confirm('¿Eliminar este usuario?')) return;
-  try{await API.deleteUser(id);}catch(e){const u=DEMO_USERS.find(x=>x.id===id);if(u) u.active=0;}
+  try{
+    await API.deleteUser(id);
+  }catch(e){
+    console.error('Error eliminando usuario:', e);
+    return alert('Error: ' + (e.message || 'no se pudo eliminar el usuario'));
+  }
   renderAdminUsers(document.getElementById('admin-main'));
 }
 
 // ══════════════════════════════════════════
 // ROLES PANEL
 // ══════════════════════════════════════════
-function renderRolesPanel(c) {
+async function renderRolesPanel(c) {
+  let users=[];
+  try{ users=await API.getUsers(); }catch(e){
+    console.error('Error cargando usuarios:', e);
+    c.innerHTML=`<div class="admin-page-title">Permisos y Roles</div><div class="alert alert-danger">No se pudieron cargar los usuarios: ${e.message||'error de conexión'}</div>`;
+    return;
+  }
+  window._users=users;
   const rolesInfo=[
     {role:'superadmin',icon:'🔐',label:'Superadmin',color:'var(--blue)',
      desc:'Acceso total. Puede asignar y modificar roles de cualquier usuario.',
@@ -786,7 +794,7 @@ function renderRolesPanel(c) {
       <div class="table-toolbar"><h3>Asignar rol a usuario</h3></div>
       <div style="overflow-x:auto"><table class="tbl">
         <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol actual</th><th>Nuevo rol</th><th></th></tr></thead>
-        <tbody>${DEMO_USERS.filter(u=>u.active).map(u=>`<tr>
+        <tbody>${users.filter(u=>u.active).map(u=>`<tr>
           <td><strong>${u.username}</strong></td><td>${u.name}</td>
           <td><span class="badge badge-${u.role}">${{superadmin:'🔐 Superadmin',admin:'⚙️ Admin',vendedor:'🏷️ Vendedor'}[u.role]||u.role}</span></td>
           <td><select id="rs-${u.id}" style="padding:6px 10px;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.85rem;font-family:'Figtree',sans-serif">
@@ -803,11 +811,16 @@ function renderRolesPanel(c) {
 
 async function assignRole(userId) {
   const newRole=document.getElementById('rs-'+userId).value;
-  const u=DEMO_USERS.find(x=>x.id===userId); if(!u) return;
+  const u=(window._users||[]).find(x=>x.id===userId); if(!u) return;
   const rLabel={superadmin:'Superadmin',admin:'Admin',vendedor:'Vendedor'};
   if(!confirm(`¿Cambiar el rol de "${u.name}" a ${rLabel[newRole]}?`)) return;
-  try{await API.updateUser(userId,{role:newRole});}catch(e){u.role=newRole;}
-  renderRolesPanel(document.getElementById('admin-main'));
+  try{
+    await API.updateUser(userId,{role:newRole});
+  }catch(e){
+    console.error('Error asignando rol:', e);
+    return alert('Error: ' + (e.message || 'no se pudo actualizar el rol'));
+  }
+  await renderRolesPanel(document.getElementById('admin-main'));
   alert(`✅ Rol actualizado: ${u.name} → ${rLabel[newRole]}`);
 }
 
@@ -861,5 +874,5 @@ window.addEventListener('DOMContentLoaded', () => {
   loadEvents();
   checkReturnFromPayment();
   const token=API.getToken();
-  if(token&&token!=='DEMO_TOKEN'){API.me().then(user=>{if(user){state.currentAdmin=user;buildAdminUI();}}).catch(()=>API.setToken(null));}
+  if(token){API.me().then(user=>{if(user){state.currentAdmin=user;buildAdminUI();}}).catch(()=>API.setToken(null));}
 });
