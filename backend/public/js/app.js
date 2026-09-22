@@ -9,7 +9,7 @@
 // ══════════════════════════════════════════
 const PERMISOS = {
   superadmin: ['dashboard','events','orders','scanner','users','payments','roles'],
-  admin:      ['dashboard','events','orders','scanner','users'],
+  admin:      ['dashboard','events','orders','scanner','users','payments'],
   vendedor:   ['orders','scanner']
 };
 
@@ -224,28 +224,21 @@ function goToCheckout() {
   document.getElementById('summary-lines').innerHTML=items.map(i=>
     `<div class="summary-line"><span>${i.qty}× ${i.name}</span><span>$${(i.qty*i.price).toLocaleString('es-AR')}</span></div>`).join('');
   document.getElementById('summary-total-val').textContent='$'+total.toLocaleString('es-AR');
-  showPage('checkout'); selectPay('mp'); generateMPQR(total);
+  showPage('checkout'); selectPay('mp');
 }
 
 let _selectedPay='mp';
 function selectPay(m) {
   _selectedPay=m;
-  ['mp','card','transfer'].forEach(x=>{
+  ['mp','transfer'].forEach(x=>{
     document.getElementById('pm-'+x)?.classList.toggle('selected',x===m);
     document.getElementById('pd-'+x)?.classList.toggle('hidden',x!==m);
   });
 }
 
-function generateMPQR(total) {
-  const el=document.getElementById('mp-qr-canvas'); if(!el) return; el.innerHTML='';
-  try { new QRCode(el,{text:`TICKETAR|MP|${total}|${Date.now()}`,width:180,height:180,correctLevel:QRCode.CorrectLevel.H}); }catch(e){}
-}
-
-function fmtCard(el) {
-  const v=el.value.replace(/\D/g,'').substring(0,16);
-  el.value=v.replace(/(.{4})/g,'$1 ').trim();
-}
-
+// El pago con tarjeta NUNCA se procesa en este frontend: siempre se redirige
+// al checkout de Mercado Pago, que valida la tarjeta y tokeniza los datos.
+// Construir un formulario propio de número de tarjeta sería una violación de PCI-DSS.
 async function submitOrder() {
   const nombre=document.getElementById('c-nombre').value.trim();
   const apellido=document.getElementById('c-apellido').value.trim();
@@ -257,22 +250,57 @@ async function submitOrder() {
   if(!items.length) return;
   const btn=document.getElementById('btn-pay'); btn.disabled=true; btn.textContent='Procesando...';
   try {
-    let order;
-    try {
-      order=await API.createOrder({event_id:state.currentEvent.id,buyer_name:nombre,buyer_lastname:apellido,
-        buyer_email:email,buyer_phone:tel||null,payment_method:_selectedPay,
-        items:items.map(i=>({stage_id:i.stageId,qty:i.qty}))});
-    } catch(e) {
-      const orderId='ORD-'+Math.random().toString(36).substring(2,10).toUpperCase();
-      const tickets=[];
-      items.forEach(item=>{ for(let i=0;i<item.qty;i++) tickets.push({code:'TK-'+Math.random().toString(36).substring(2,8).toUpperCase(),stage:item.name,price:item.price,buyer_name:nombre,buyer_lastname:apellido,event_title:state.currentEvent.title,event_date:state.currentEvent.date,event_venue:state.currentEvent.venue,qr_data:null}); });
-      order={order_id:orderId,total:items.reduce((s,i)=>s+i.qty*i.price,0),tickets};
+    const order=await API.createOrder({event_id:state.currentEvent.id,buyer_name:nombre,buyer_lastname:apellido,
+      buyer_email:email,buyer_phone:tel||null,payment_method:_selectedPay,
+      items:items.map(i=>({stage_id:i.stageId,qty:i.qty}))});
+
+    if(_selectedPay==='transfer') {
+      showPendingOrder(order,email);
+      return;
     }
-    renderSuccessTickets(order,{nombre,apellido,email});
-    showPage('success');
-    document.getElementById('success-subtitle').textContent=`Orden ${order.order_id||order.id} · Entradas enviadas a ${email}`;
-  } catch(e){alert('Error: '+e.message);}
-  finally{btn.disabled=false;btn.textContent='Confirmar y pagar';}
+
+    // Mercado Pago: redirige al checkout real. Ahí se valida la tarjeta,
+    // nunca acá. El comprador vuelve a /success?order=... ya sea que haya
+    // pagado o no; en esa pantalla se chequea el estado real contra el backend.
+    const pref=await API.getMPPreference(order.order_id);
+    if(pref.demo) {
+      alert('Mercado Pago no está configurado en este servidor (falta MP_ACCESS_TOKEN). La orden quedó creada como pendiente de pago, pero no se puede cobrar todavía.');
+      showPendingOrder(order,email);
+      return;
+    }
+    window.location.href=pref.init_point;
+  } catch(e){alert('Error: '+e.message); btn.disabled=false; btn.textContent='Confirmar y pagar';}
+}
+
+function showPendingOrder(order,email) {
+  showPage('success');
+  document.getElementById('success-subtitle').textContent=`Orden ${order.order_id} · Pago pendiente de confirmación`;
+  document.getElementById('generated-tickets').innerHTML=`
+    <div class="alert alert-info">
+      Tu orden <strong>${order.order_id}</strong> quedó registrada. Las entradas se emiten recién cuando se confirme el pago —
+      te las enviamos a <strong>${email}</strong> apenas se acredite. Si elegiste transferencia, mandá el comprobante a
+      pagos@ticketar.com con el número de orden.
+    </div>`;
+}
+
+// Vuelta desde Mercado Pago: /success?order=ORD-XXXX[&pending=1|&error=1]
+async function checkReturnFromPayment() {
+  const params=new URLSearchParams(window.location.search);
+  const orderId=params.get('order');
+  if(!orderId) return;
+  showPage('success');
+  document.getElementById('success-subtitle').textContent='Verificando el pago...';
+  try {
+    const order=await API.getOrder(orderId);
+    if(order.payment_status==='paid') {
+      renderSuccessTickets(order,{nombre:order.buyer_name,apellido:order.buyer_lastname,email:order.buyer_email});
+      document.getElementById('success-subtitle').textContent=`Orden ${order.id} · Entradas enviadas a ${order.buyer_email}`;
+    } else {
+      showPendingOrder({order_id:order.id},order.buyer_email);
+    }
+  } catch(e) {
+    document.getElementById('success-subtitle').textContent='No pudimos verificar la orden. Si ya pagaste, revisá tu email.';
+  }
 }
 
 function renderSuccessTickets(order,buyer) {
@@ -820,6 +848,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
   document.getElementById('page-home').classList.add('active');
   loadEvents();
+  checkReturnFromPayment();
   const token=API.getToken();
   if(token&&token!=='DEMO_TOKEN'){API.me().then(user=>{if(user){state.currentAdmin=user;buildAdminUI();}}).catch(()=>API.setToken(null));}
 });

@@ -124,7 +124,7 @@ router.get('/mp/status/:orderId', async (req, res) => {
 });
 
 // GET /api/payments/dashboard — Admin: resumen financiero
-router.get('/dashboard', auth, async (req, res) => {
+router.get('/dashboard', auth, adminOnly, async (req, res) => {
   try {
     const stats = await dbGet(`
       SELECT

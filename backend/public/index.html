@@ -107,14 +107,9 @@
           <div class="card-header"><span class="step-num">2</span> Método de pago</div>
           <div class="pay-methods">
             <div class="pay-method selected" id="pm-mp" onclick="selectPay('mp')">
-              <div class="pm-icon">📱</div>
-              <div class="pm-label">Mercado Pago QR</div>
-              <div class="pm-sub">Crédito, débito, cuenta MP</div>
-            </div>
-            <div class="pay-method" id="pm-card" onclick="selectPay('card')">
               <div class="pm-icon">💳</div>
-              <div class="pm-label">Tarjeta</div>
-              <div class="pm-sub">Crédito o débito</div>
+              <div class="pm-label">Tarjeta / Mercado Pago</div>
+              <div class="pm-sub">Crédito, débito, cuenta MP, QR</div>
             </div>
             <div class="pay-method" id="pm-transfer" onclick="selectPay('transfer')">
               <div class="pm-icon">🏦</div>
@@ -127,29 +122,16 @@
           <div id="pd-mp" class="pay-detail">
             <div class="mp-qr-wrap">
               <div class="mp-qr-header">
-                <img src="https://http2.mlstatic.com/frontend-assets/ml-web-navigation/ui-navigation/5.21.22/mercadopago/logo__large@2x.png" 
+                <img src="https://http2.mlstatic.com/frontend-assets/ml-web-navigation/ui-navigation/5.21.22/mercadopago/logo__large@2x.png"
                      alt="Mercado Pago" style="height:28px;filter:brightness(0) invert(1)">
               </div>
-              <div id="mp-qr-canvas"></div>
-              <p class="mp-qr-hint">Escaneá con la app de Mercado Pago</p>
+              <p class="mp-qr-hint">Al confirmar te vamos a redirigir al checkout seguro de Mercado Pago para ingresar los datos de tu tarjeta y pagar.</p>
             </div>
             <div class="mp-methods-grid">
               <span>💳 Tarjeta crédito</span><span>💳 Débito</span>
               <span>💰 Cuenta MP</span><span>🏦 Efectivo</span>
             </div>
-          </div>
-
-          <!-- Card Details -->
-          <div id="pd-card" class="pay-detail hidden">
-            <div class="form-group"><label>Número de tarjeta</label>
-              <input type="text" placeholder="1234 5678 9012 3456" maxlength="19" oninput="fmtCard(this)">
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>Vencimiento</label><input type="text" placeholder="MM/AA" maxlength="5"></div>
-              <div class="form-group"><label>CVV</label><input type="text" placeholder="123" maxlength="4"></div>
-            </div>
-            <div class="form-group"><label>Nombre del titular</label><input type="text" placeholder="JUAN GARCIA"></div>
-            <div class="secure-badge">🔒 Pago procesado por Mercado Pago con encriptación SSL</div>
+            <div class="secure-badge">🔒 Pago procesado y validado por Mercado Pago, nunca vemos los datos de tu tarjeta</div>
           </div>
 
           <!-- Transfer Details -->

@@ -70,7 +70,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/events — Admin: crear evento
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { title, description, emoji, date, time, venue, city, image_url, stages } = req.body;
     if (!title || !date || !venue || !city)
@@ -104,7 +104,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // PUT /api/events/:id — Admin: editar evento
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
     const { title, description, emoji, date, time, venue, city, image_url, active } = req.body;
     const event = await dbGet('SELECT * FROM events WHERE id = ?', [req.params.id]);
@@ -133,7 +133,7 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // POST /api/events/:id/stages — Admin: agregar etapa
-router.post('/:id/stages', auth, async (req, res) => {
+router.post('/:id/stages', auth, adminOnly, async (req, res) => {
   try {
     const { name, price, quantity, active, sort_order } = req.body;
     if (!name || !price || !quantity)
@@ -154,7 +154,7 @@ router.post('/:id/stages', auth, async (req, res) => {
 });
 
 // PUT /api/events/:id/stages/:stageId — Admin: editar etapa
-router.put('/:id/stages/:stageId', auth, async (req, res) => {
+router.put('/:id/stages/:stageId', auth, adminOnly, async (req, res) => {
   try {
     const { name, price, quantity, active } = req.body;
     const stage = await dbGet('SELECT * FROM ticket_stages WHERE id = ? AND event_id = ?', [req.params.stageId, req.params.id]);
