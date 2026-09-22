@@ -524,22 +524,22 @@ function showCreateEventModal() {
 }
 
 async function createEvent() {
-  const title=document.getElementById('ne-title').value.trim();
-  const date=document.getElementById('ne-date').value;
-  const venue=document.getElementById('ne-venue').value.trim();
-  const city=document.getElementById('ne-city').value.trim();
-  const sName=document.getElementById('ne-sname').value.trim();
-  const sPrice=parseFloat(document.getElementById('ne-sprice').value);
-  const sQty=parseInt(document.getElementById('ne-sqty').value);
-  if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return alert('Completá todos los campos (*)');
-  try{
+  try {
+    const title=document.getElementById('ne-title')?.value.trim();
+    const date=document.getElementById('ne-date')?.value;
+    const venue=document.getElementById('ne-venue')?.value.trim();
+    const city=document.getElementById('ne-city')?.value.trim();
+    const sName=document.getElementById('ne-sname')?.value.trim();
+    const sPrice=parseFloat(document.getElementById('ne-sprice')?.value);
+    const sQty=parseInt(document.getElementById('ne-sqty')?.value);
+    if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return alert('Completá todos los campos (*)');
     await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,stages:[{name:sName,price:sPrice,quantity:sQty}]});
     closeModal();
     await renderAdminEvents(document.getElementById('admin-main'));
     alert('Evento creado exitosamente');
   }catch(e){
     console.error('Error creando evento:', e);
-    return alert('Error: ' + (e.message || JSON.stringify(e) || 'Error desconocido al crear evento'));
+    alert('Error: ' + (e.message || JSON.stringify(e) || 'Error desconocido al crear evento'));
   }
 }
 
