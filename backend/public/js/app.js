@@ -469,6 +469,7 @@ async function renderAdminEvents(c) {
     return;
   }
   const canEdit=can('events');
+  window._events=events;
   c.innerHTML=`<div class="admin-header-row">
     <div class="admin-page-title" style="margin:0">Gestión de Eventos</div>
     ${canEdit?`<button class="btn btn-primary" onclick="showCreateEventModal()">+ Nuevo Evento</button>`:''}
@@ -487,8 +488,9 @@ async function renderAdminEvents(c) {
           <div class="progress-bar-bg" style="width:80px;margin-top:4px"><div class="progress-bar-fill" style="width:${pct}%"></div></div></td>
         <td><span class="badge ${e.active?'badge-active':'badge-inactive'}">${e.active?'Activo':'Inactivo'}</span></td>
         <td><div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          ${canEdit?`<button class="btn btn-secondary btn-sm" onclick="showEditEventModal(${e.id})">Editar</button>`:''}
           <button class="btn btn-secondary btn-sm" onclick="showStagesModal(${e.id})">Etapas</button>
-          ${canEdit?`<button class="btn btn-danger btn-sm" onclick="deactivateEvent(${e.id})">Desactivar</button>`:''}
+          ${canEdit?(e.active?`<button class="btn btn-danger btn-sm" onclick="deactivateEvent(${e.id})">Desactivar</button>`:`<button class="btn btn-success btn-sm" onclick="reactivateEvent(${e.id})">Activar</button>`):''}
         </div></td>
       </tr>`;
     }).join('')||'<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">Sin eventos</td></tr>'}
@@ -617,6 +619,74 @@ async function deactivateEvent(id) {
   }catch(e){
     console.error('Error desactivando evento:', e);
     alert('Error al desactivar: ' + (e.message || 'Intenta de nuevo'));
+  }
+}
+
+async function reactivateEvent(id) {
+  try{
+    await API.updateEvent(id, {active:1});
+    await renderAdminEvents(document.getElementById('admin-main'));
+  }catch(e){
+    console.error('Error activando evento:', e);
+    alert('Error al activar: ' + (e.message || 'Intenta de nuevo'));
+  }
+}
+
+function showEditEventModal(id) {
+  const ev = (window._events||[]).find(e=>e.id===id);
+  if (!ev) return alert('No se encontró el evento');
+  console.log('[TicketAR] Abriendo modal de edición de evento', id);
+  document.getElementById('modal-box').innerHTML=`
+    <div class="modal-title">Editar Evento</div>
+    <div id="ee-error" class="alert alert-danger hidden"></div>
+    <div class="form-group"><label>Título *</label><input id="ee-title" type="text" value="${ev.title||''}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha *</label><input id="ee-date" type="date" value="${ev.date||''}"></div>
+      <div class="form-group"><label>Hora *</label><input id="ee-time" type="time" value="${ev.time||'20:00'}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Lugar *</label><input id="ee-venue" value="${ev.venue||''}"></div>
+      <div class="form-group"><label>Ciudad *</label><input id="ee-city" value="${ev.city||''}"></div>
+    </div>
+    <div class="form-group"><label>Descripción</label><textarea id="ee-desc">${ev.description||''}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Emoji</label><input id="ee-emoji" type="text" value="${ev.emoji||'🎪'}" style="width:70px"></div>
+      <div class="form-group"><label>Estado</label><select id="ee-active">
+        <option value="1" ${ev.active?'selected':''}>Activo</option>
+        <option value="0" ${!ev.active?'selected':''}>Inactivo</option>
+      </select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="ee-submit-btn" onclick="submitEditEvent(${id})">Guardar cambios</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+    </div>`;
+  openModal();
+}
+
+async function submitEditEvent(id) {
+  const btn = document.getElementById('ee-submit-btn');
+  const errEl = document.getElementById('ee-error');
+  if (errEl) errEl.classList.add('hidden');
+  try {
+    const title=document.getElementById('ee-title')?.value.trim();
+    const date=document.getElementById('ee-date')?.value;
+    const venue=document.getElementById('ee-venue')?.value.trim();
+    const city=document.getElementById('ee-city')?.value.trim();
+    if(!title||!date||!venue||!city) { if(errEl){errEl.textContent='Completá todos los campos obligatorios (*)';errEl.classList.remove('hidden');} return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    await API.updateEvent(id, {
+      title, date, venue, city,
+      time: document.getElementById('ee-time').value,
+      emoji: document.getElementById('ee-emoji').value || '🎪',
+      description: document.getElementById('ee-desc').value,
+      active: parseInt(document.getElementById('ee-active').value)
+    });
+    closeModal();
+    await renderAdminEvents(document.getElementById('admin-main'));
+  } catch(e) {
+    console.error('[TicketAR] Error editando evento:', e);
+    if (errEl) { errEl.textContent = 'Error: ' + (e.message||'no se pudo guardar'); errEl.classList.remove('hidden'); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
   }
 }
 
