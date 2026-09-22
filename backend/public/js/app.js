@@ -519,7 +519,7 @@ function showCreateEventModal() {
     </div>
     <div class="form-group"><label>Cantidad disponible *</label><input id="ne-sqty" type="number" placeholder="100"></div>
     <div class="modal-footer">
-      <button class="btn btn-primary" id="ne-submit-btn" onclick="createEvent()">Crear Evento</button>
+      <button class="btn btn-primary" id="ne-submit-btn" onclick="submitNewEvent()">Crear Evento</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
     </div>`;
   openModal();
@@ -531,8 +531,8 @@ function showNeError(msg) {
   else alert(msg);
 }
 
-async function createEvent() {
-  console.log('[TicketAR] createEvent() click registrado');
+async function submitNewEvent() {
+  console.log('[TicketAR] submitNewEvent() click registrado');
   const btn = document.getElementById('ne-submit-btn');
   const errEl = document.getElementById('ne-error');
   if (errEl) errEl.classList.add('hidden');
