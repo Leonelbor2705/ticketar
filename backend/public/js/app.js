@@ -510,10 +510,13 @@ async function createEvent() {
   if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return alert('Completá todos los campos (*)');
   try{
     await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,stages:[{name:sName,price:sPrice,quantity:sQty}]});
+    closeModal();
+    await renderAdminEvents(document.getElementById('admin-main'));
+    alert('Evento creado exitosamente');
   }catch(e){
-    return alert('No se pudo crear el evento: ' + e.message);
+    console.error('Error creando evento:', e);
+    return alert('Error: ' + (e.message || JSON.stringify(e) || 'Error desconocido al crear evento'));
   }
-  closeModal(); renderAdminEvents(document.getElementById('admin-main')); alert('Evento creado');
 }
 
 async function showStagesModal(evId) {
@@ -558,8 +561,16 @@ async function addStageToEvent(evId) {
 }
 async function deactivateEvent(id) {
   if(!confirm('¿Desactivar este evento?')) return;
-  try{await API.deleteEvent(id);}catch(e){const ev=DEMO_EVENTS.find(e=>e.id===id);if(ev) ev.active=0;}
-  renderAdminEvents(document.getElementById('admin-main'));
+  try{
+    await API.deleteEvent(id);
+    await renderAdminEvents(document.getElementById('admin-main'));
+    alert('Evento desactivado');
+  }catch(e){
+    console.error('Error desactivando evento:', e);
+    const ev=DEMO_EVENTS.find(e=>e.id===id);
+    if(ev) ev.active=0;
+    alert('Error al desactivar: ' + (e.message || 'Intenta de nuevo'));
+  }
 }
 
 // ══════════════════════════════════════════
