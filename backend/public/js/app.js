@@ -496,8 +496,10 @@ async function renderAdminEvents(c) {
 }
 
 function showCreateEventModal() {
+  console.log('[TicketAR] Abriendo modal de nuevo evento');
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Nuevo Evento</div>
+    <div id="ne-error" class="alert alert-danger hidden"></div>
     <div class="form-group"><label>Título *</label><input id="ne-title" type="text" placeholder="Nombre del evento"></div>
     <div class="form-row">
       <div class="form-group"><label>Fecha *</label><input id="ne-date" type="date"></div>
@@ -517,13 +519,23 @@ function showCreateEventModal() {
     </div>
     <div class="form-group"><label>Cantidad disponible *</label><input id="ne-sqty" type="number" placeholder="100"></div>
     <div class="modal-footer">
-      <button class="btn btn-primary" onclick="createEvent()">Crear Evento</button>
+      <button class="btn btn-primary" id="ne-submit-btn" onclick="createEvent()">Crear Evento</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
     </div>`;
   openModal();
 }
 
+function showNeError(msg) {
+  const el = document.getElementById('ne-error');
+  if (el) { el.textContent = msg; el.classList.remove('hidden'); el.scrollIntoView({block:'nearest'}); }
+  else alert(msg);
+}
+
 async function createEvent() {
+  console.log('[TicketAR] createEvent() click registrado');
+  const btn = document.getElementById('ne-submit-btn');
+  const errEl = document.getElementById('ne-error');
+  if (errEl) errEl.classList.add('hidden');
   try {
     const title=document.getElementById('ne-title')?.value.trim();
     const date=document.getElementById('ne-date')?.value;
@@ -532,14 +544,17 @@ async function createEvent() {
     const sName=document.getElementById('ne-sname')?.value.trim();
     const sPrice=parseFloat(document.getElementById('ne-sprice')?.value);
     const sQty=parseInt(document.getElementById('ne-sqty')?.value);
-    if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return alert('Completá todos los campos (*)');
+    console.log('[TicketAR] Datos del formulario:', {title,date,venue,city,sName,sPrice,sQty});
+    if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return showNeError('Completá todos los campos obligatorios (*), incluyendo Título y Fecha arriba del todo.');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
     await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,stages:[{name:sName,price:sPrice,quantity:sQty}]});
+    console.log('[TicketAR] Evento creado OK');
     closeModal();
     await renderAdminEvents(document.getElementById('admin-main'));
-    alert('Evento creado exitosamente');
   }catch(e){
-    console.error('Error creando evento:', e);
-    alert('Error: ' + (e.message || JSON.stringify(e) || 'Error desconocido al crear evento'));
+    console.error('[TicketAR] Error creando evento:', e);
+    showNeError('Error: ' + (e.message || JSON.stringify(e) || 'Error desconocido al crear evento'));
+    if (btn) { btn.disabled = false; btn.textContent = 'Crear Evento'; }
   }
 }
 
