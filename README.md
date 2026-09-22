@@ -208,3 +208,4 @@ ticketar/
 ## 📄 LICENCIA
 
 MIT — Libre para uso comercial y personal
+
