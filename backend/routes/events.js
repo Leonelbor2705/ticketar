@@ -77,14 +77,14 @@ router.post('/', auth, adminOnly, async (req, res) => {
     if (!isGlobalAdmin(req.user))
       return res.status(403).json({ error: 'Solo el administrador general puede crear eventos' });
 
-    const { title, description, emoji, date, time, venue, city, image_url, stages } = req.body;
+    const { title, description, emoji, date, time, venue, city, image_url, stages, congregacion_required } = req.body;
     if (!title || !date || !venue || !city)
       return res.status(400).json({ error: 'title, date, venue y city son requeridos' });
 
     const result = await dbRun(
-      `INSERT INTO events (title, description, emoji, date, time, venue, city, image_url, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [title, description || '', emoji || '🎪', date, time || '20:00', venue, city, image_url || null, req.user.id]
+      `INSERT INTO events (title, description, emoji, date, time, venue, city, image_url, created_by, congregacion_required)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, description || '', emoji || '🎪', date, time || '20:00', venue, city, image_url || null, req.user.id, congregacion_required ? 1 : 0]
     );
     const eventId = result.lastID;
 
@@ -114,17 +114,18 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
     if (!canAccessEvent(req.user, req.params.id))
       return res.status(403).json({ error: 'No tenés permiso sobre este evento' });
 
-    const { title, description, emoji, date, time, venue, city, image_url, active } = req.body;
+    const { title, description, emoji, date, time, venue, city, image_url, active, congregacion_required } = req.body;
     const event = await dbGet('SELECT * FROM events WHERE id = ?', [req.params.id]);
     if (!event) return res.status(404).json({ error: 'Evento no encontrado' });
 
     await dbRun(
-      `UPDATE events SET title=?, description=?, emoji=?, date=?, time=?, venue=?, city=?, image_url=?, active=?
+      `UPDATE events SET title=?, description=?, emoji=?, date=?, time=?, venue=?, city=?, image_url=?, active=?, congregacion_required=?
        WHERE id=?`,
       [
         title || event.title, description ?? event.description, emoji || event.emoji,
         date || event.date, time || event.time, venue || event.venue, city || event.city,
         image_url ?? event.image_url, active !== undefined ? active : event.active,
+        congregacion_required !== undefined ? (congregacion_required ? 1 : 0) : event.congregacion_required,
         req.params.id
       ]
     );

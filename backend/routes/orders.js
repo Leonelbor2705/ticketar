@@ -197,4 +197,53 @@ router.post('/:id/confirm', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+// PUT /api/orders/:id — Admin/vendedor: editar datos del comprador y/o estado de una orden
+// (ABM completo: corregir errores de carga, cancelar/reactivar liberando o reservando stock)
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (!canAccessEvent(req.user, order.event_id))
+      return res.status(403).json({ error: 'No tenés permiso sobre esta orden' });
+
+    const { buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, payment_status } = req.body;
+    if (payment_status && !['pending', 'paid', 'failed', 'refunded'].includes(payment_status))
+      return res.status(400).json({ error: 'Estado inválido' });
+
+    const newStatus = payment_status || order.payment_status;
+    const stageCounts = await dbAll(
+      'SELECT stage_id, COUNT(*) as c FROM tickets WHERE order_id = ? GROUP BY stage_id', [order.id]
+    );
+
+    if (order.payment_status === 'paid' && newStatus !== 'paid') {
+      // Libera el stock que esta orden tenía reservado/vendido
+      for (const s of stageCounts) await dbRun('UPDATE ticket_stages SET sold = sold - ? WHERE id = ?', [s.c, s.stage_id]);
+    } else if (order.payment_status !== 'paid' && newStatus === 'paid') {
+      // Reactivar una orden cancelada: verificar que siga habiendo stock antes de reservarlo
+      for (const s of stageCounts) {
+        const stage = await dbGet('SELECT quantity, sold FROM ticket_stages WHERE id = ?', [s.stage_id]);
+        if (stage && (stage.quantity - stage.sold) < s.c) {
+          const err = new Error('No hay stock suficiente para reactivar esta orden');
+          err.status = 400; throw err;
+        }
+      }
+      for (const s of stageCounts) await dbRun('UPDATE ticket_stages SET sold = sold + ? WHERE id = ?', [s.c, s.stage_id]);
+    }
+
+    const newName = buyer_name || order.buyer_name;
+    const newLastname = buyer_lastname || order.buyer_lastname;
+    await dbRun(
+      `UPDATE orders SET buyer_name=?, buyer_lastname=?, buyer_email=?, buyer_phone=?, congregacion=?, payment_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [newName, newLastname, buyer_email || order.buyer_email, buyer_phone ?? order.buyer_phone,
+       congregacion ?? order.congregacion, newStatus, order.id]
+    );
+    await dbRun('UPDATE tickets SET buyer_name=?, buyer_lastname=? WHERE order_id=?', [newName, newLastname, order.id]);
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(e.status || 500).json({ error: e.status ? e.message : 'Error del servidor' });
+  }
+});
+
 module.exports = router;

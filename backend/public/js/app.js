@@ -260,7 +260,7 @@ let _congregaciones = null;
 let _congregacionSelected = '';
 
 function eventNeedsCongregacion(ev) {
-  return !!ev?.title?.toLowerCase().includes('congreso de hombres');
+  return !!(ev?.congregacion_required === true || ev?.congregacion_required === 1 || ev?.congregacion_required === '1');
 }
 
 async function renderCongregacionField() {
@@ -580,6 +580,7 @@ function showCreateEventModal() {
     </div>
     <div class="form-group"><label>Descripción</label><textarea id="ne-desc" placeholder="Descripción..."></textarea></div>
     <div class="form-group"><label>Emoji</label><input id="ne-emoji" type="text" placeholder="🎵" style="width:70px"></div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:.5rem;font-weight:normal"><input id="ne-congregacion" type="checkbox" style="width:auto"> Pedir "Congregación" en la compra e inscripción manual</label></div>
     <hr style="margin:1rem 0;border-color:var(--gray-200)">
     <h3 style="color:var(--blue);font-size:1rem;margin-bottom:.8rem">Primera etapa de venta</h3>
     <div class="form-row">
@@ -616,7 +617,7 @@ async function submitNewEvent() {
     console.log('[TicketAR] Datos del formulario:', {title,date,venue,city,sName,sPrice,sQty});
     if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return showNeError('Completá todos los campos obligatorios (*), incluyendo Título y Fecha arriba del todo.');
     if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
-    await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,stages:[{name:sName,price:sPrice,quantity:sQty}]});
+    await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,congregacion_required:document.getElementById('ne-congregacion').checked,stages:[{name:sName,price:sPrice,quantity:sQty}]});
     console.log('[TicketAR] Evento creado OK');
     closeModal();
     await renderAdminEvents(document.getElementById('admin-main'));
@@ -723,6 +724,7 @@ function showEditEventModal(id) {
         <option value="0" ${!ev.active?'selected':''}>Inactivo</option>
       </select></div>
     </div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:.5rem;font-weight:normal"><input id="ee-congregacion" type="checkbox" style="width:auto" ${eventNeedsCongregacion(ev)?'checked':''}> Pedir "Congregación" en la compra e inscripción manual</label></div>
     <div class="modal-footer">
       <button class="btn btn-primary" id="ee-submit-btn" onclick="submitEditEvent(${id})">Guardar cambios</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -746,7 +748,8 @@ async function submitEditEvent(id) {
       time: document.getElementById('ee-time').value,
       emoji: document.getElementById('ee-emoji').value || '🎪',
       description: document.getElementById('ee-desc').value,
-      active: parseInt(document.getElementById('ee-active').value)
+      active: parseInt(document.getElementById('ee-active').value),
+      congregacion_required: document.getElementById('ee-congregacion').checked
     });
     closeModal();
     await renderAdminEvents(document.getElementById('admin-main'));
@@ -796,9 +799,121 @@ function paintOrders(orders) {
         <td style="font-size:.8rem">${{mp:'MP QR',card:'Tarjeta',transfer:'Transf.',manual:'Manual'}[o.payment_method]||'—'}</td>
         <td><span class="badge badge-${o.payment_status}">${{paid:'Pagado',pending:'Pendiente',failed:'Fallido'}[o.payment_status]||o.payment_status}</span></td>
         <td style="font-size:.78rem;color:var(--gray-600)">${(o.created_at||'').split('T')[0]}</td>
-        ${cc?`<td>${o.payment_status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmPago('${o.id}')">✓ Confirmar</button>`:''}</td>`:''}
+        ${cc?`<td style="display:flex;gap:.3rem;flex-wrap:wrap">
+          ${o.payment_status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmPago('${o.id}')">✓ Confirmar</button>`:''}
+          <button class="btn btn-secondary btn-sm" onclick="showEditOrderModal('${o.id}')">Editar</button>
+          ${o.payment_status!=='refunded'?`<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')">Cancelar</button>`:''}
+        </td>`:''}
       </tr>`).join('')||`<tr><td colspan="${cc?10:9}" style="text-align:center;padding:2rem;color:var(--gray-400)">Sin órdenes</td></tr>`}
       </tbody></table>`;
+}
+
+async function cancelOrder(id) {
+  if (!confirm(`¿Cancelar la orden ${id}? Se liberará el stock de las entradas y quedará marcada como reembolsada.`)) return;
+  try {
+    await API.updateOrder(id, { payment_status: 'refunded' });
+    await renderAdminOrders(document.getElementById('admin-main'));
+  } catch (e) {
+    alert('No se pudo cancelar la orden: ' + (e.message || 'error de conexión'));
+  }
+}
+
+let _eoCongregacionSelected = '';
+async function showEditOrderModal(id) {
+  const o = (window._orders || []).find(x => x.id === id);
+  if (!o) return alert('Orden no encontrada');
+  _eoCongregacionSelected = o.congregacion || '';
+  let evList = window._events || window._moEvents;
+  if (!evList) { try { evList = await API.getAllEvents(); } catch (e) { evList = []; } }
+  const ev = evList.find(e => e.id === o.event_id) || { title: o.event_title };
+  const needsCong = eventNeedsCongregacion(ev);
+
+  document.getElementById('modal-box').innerHTML = `
+    <div class="modal-title">Editar orden ${o.id}</div>
+    <div id="eo-error" class="alert alert-danger hidden"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Nombre *</label><input id="eo-nombre" value="${(o.buyer_name||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Apellido *</label><input id="eo-apellido" value="${(o.buyer_lastname||'').replace(/"/g,'&quot;')}"></div>
+    </div>
+    <div class="form-group"><label>Email *</label><input id="eo-email" type="email" value="${(o.buyer_email||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-group"><label>Teléfono</label><input id="eo-tel" value="${(o.buyer_phone||'').replace(/"/g,'&quot;')}"></div>
+    <div id="eo-congregacion-wrap" class="${needsCong?'':'hidden'}"></div>
+    <div class="form-group"><label>Estado</label>
+      <select id="eo-status">
+        ${['pending','paid','failed','refunded'].map(s=>`<option value="${s}" ${o.payment_status===s?'selected':''}>${{pending:'Pendiente',paid:'Pagado',failed:'Fallido',refunded:'Reembolsado/Cancelado'}[s]}</option>`).join('')}
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="eo-submit-btn" onclick="submitEditOrder('${o.id}')">Guardar cambios</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+    </div>`;
+  openModal();
+  if (needsCong) await renderEditOrderCongregacion(o.congregacion || '');
+}
+
+async function renderEditOrderCongregacion(current) {
+  const wrap = document.getElementById('eo-congregacion-wrap');
+  if (!_congregaciones) {
+    try { const res = await fetch('data/congregaciones.json'); _congregaciones = await res.json(); }
+    catch (e) { console.error('Error cargando congregaciones:', e); _congregaciones = []; }
+  }
+  wrap.innerHTML = `
+    <label>Congregación *</label>
+    <div class="combo-wrap">
+      <input id="eo-congregacion-input" type="text" autocomplete="off" value="${(current||'').replace(/"/g,'&quot;')}" placeholder="Buscá la congregación...">
+      <div id="eo-congregacion-list" class="combo-list hidden"></div>
+    </div>`;
+  const input = document.getElementById('eo-congregacion-input');
+  const list = document.getElementById('eo-congregacion-list');
+  const renderList = (items) => {
+    list.innerHTML = items.length
+      ? items.map(x=>`<div class="combo-item" data-val="${x.replace(/"/g,'&quot;')}">${x}</div>`).join('')
+      : '<div class="combo-empty">Sin resultados</div>';
+    list.classList.remove('hidden');
+  };
+  input.addEventListener('focus', () => renderList(_congregaciones));
+  input.addEventListener('input', () => {
+    _eoCongregacionSelected = '';
+    const q = input.value.toLowerCase().trim();
+    renderList(q ? _congregaciones.filter(x=>x.toLowerCase().includes(q)) : _congregaciones);
+  });
+  list.addEventListener('click', (ev) => {
+    const item = ev.target.closest('.combo-item'); if (!item) return;
+    _eoCongregacionSelected = item.dataset.val;
+    input.value = _eoCongregacionSelected;
+    list.classList.add('hidden');
+  });
+}
+
+async function submitEditOrder(id) {
+  const errEl = document.getElementById('eo-error');
+  if (errEl) errEl.classList.add('hidden');
+  const btn = document.getElementById('eo-submit-btn');
+  try {
+    const nombre = document.getElementById('eo-nombre').value.trim();
+    const apellido = document.getElementById('eo-apellido').value.trim();
+    const email = document.getElementById('eo-email').value.trim();
+    const tel = document.getElementById('eo-tel').value.trim();
+    const status = document.getElementById('eo-status').value;
+    const congWrap = document.getElementById('eo-congregacion-wrap');
+    const needsCong = congWrap && !congWrap.classList.contains('hidden');
+
+    if (!nombre || !apellido || !email) return showModalError(errEl, 'Completá nombre, apellido y email');
+    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/)) return showModalError(errEl, 'Email inválido');
+    if (needsCong && !_eoCongregacionSelected) return showModalError(errEl, 'Seleccioná la congregación de la lista');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    await API.updateOrder(id, {
+      buyer_name: nombre, buyer_lastname: apellido, buyer_email: email, buyer_phone: tel || null,
+      congregacion: needsCong ? _eoCongregacionSelected : undefined, payment_status: status
+    });
+    closeModal();
+    await renderAdminOrders(document.getElementById('admin-main'));
+  } catch (e) {
+    console.error('Error editando orden:', e);
+    showModalError(errEl, 'Error: ' + (e.message || 'no se pudo guardar'));
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
+  }
 }
 
 function filterOrders(q) {

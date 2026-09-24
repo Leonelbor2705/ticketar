@@ -49,6 +49,7 @@ const API = (() => {
     },
     getOrder: (id) => req('GET', `/orders/${id}`),
     confirmOrder: (id) => req('POST', `/orders/${id}/confirm`),
+    updateOrder: (id, d) => req('PUT', `/orders/${id}`, d),
 
     // Tickets
     validateTicket: (code) => req('POST', '/tickets/validate', { code }),

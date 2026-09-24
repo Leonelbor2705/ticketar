@@ -1,13 +1,11 @@
 // utils/initDb.js
-// Ejecutar con: node utils/initDb.js
-require('dotenv').config();
-const { Pool } = require('pg');
+// Crea/actualiza el esquema (todo con IF NOT EXISTS / ON CONFLICT, así que es
+// seguro correrlo en cada arranque del server, no solo la primera vez) y
+// siembra el admin + eventos demo. server.js llama a ensureSchema() al bootear,
+// así una columna nueva (ej. congregacion_required) queda aplicada en el
+// próximo deploy sin tener que correr nada a mano contra Supabase.
+// También se puede correr suelto con: node utils/initDb.js
 const bcrypt = require('bcryptjs');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const schema = `
 CREATE TABLE IF NOT EXISTS users (
@@ -40,6 +38,9 @@ CREATE TABLE IF NOT EXISTS events (
   created_by INTEGER REFERENCES users(id),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Si el evento pide congregación en el checkout y en la inscripción manual (ej. Congreso de Hombres)
+ALTER TABLE events ADD COLUMN IF NOT EXISTS congregacion_required INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS ticket_stages (
   id SERIAL PRIMARY KEY,
@@ -102,7 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_stages_event ON ticket_stages(event_id);
 CREATE INDEX IF NOT EXISTS idx_users_event ON users(event_id);
 `;
 
-async function main() {
+async function ensureSchema(pool) {
   await pool.query(schema);
   console.log('✅ Tablas creadas correctamente');
 
@@ -152,11 +153,17 @@ async function main() {
   // secuencia del SERIAL para que el próximo evento creado por la app no choque.
   await pool.query(`SELECT setval('events_id_seq', (SELECT MAX(id) FROM events))`);
 
-  console.log('✅ Base de datos inicializada. Ya podés ejecutar: npm start');
-  await pool.end();
+  console.log('✅ Base de datos inicializada');
 }
 
-main().catch((err) => {
-  console.error('Error inicializando la base de datos:', err);
-  process.exit(1);
-});
+module.exports = { ensureSchema };
+
+// Permite seguir corriéndolo suelto: node utils/initDb.js
+if (require.main === module) {
+  require('dotenv').config();
+  const { Pool } = require('pg');
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  ensureSchema(pool)
+    .then(() => pool.end())
+    .catch((err) => { console.error('Error inicializando la base de datos:', err); process.exit(1); });
+}

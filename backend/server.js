@@ -88,15 +88,24 @@ app.use((err, req, res, next) => {
 });
 
 // ==================== START ====================
-app.listen(PORT, () => {
-  console.log(`
+// Aplica el esquema (tablas/columnas nuevas) antes de aceptar tráfico, así un
+// deploy que agrega una columna no requiere correr una migración a mano.
+const { pool } = require('./utils/db');
+const { ensureSchema } = require('./utils/initDb');
+
+ensureSchema(pool)
+  .catch((err) => console.error('⚠️  Error aplicando el esquema de la base de datos:', err))
+  .finally(() => {
+    app.listen(PORT, () => {
+      console.log(`
   ╔══════════════════════════════════╗
   ║      TicketAR Backend v1.0       ║
   ║  http://localhost:${PORT}           ║
   ╚══════════════════════════════════╝
   Entorno: ${process.env.NODE_ENV || 'development'}
   DB: Postgres (${process.env.DATABASE_URL ? 'conectada' : '⚠️  DATABASE_URL no configurada'})
-  `);
-});
+      `);
+    });
+  });
 
 module.exports = app;
