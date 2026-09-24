@@ -252,8 +252,74 @@ function goToCheckout() {
   document.getElementById('summary-lines').innerHTML=items.map(i=>
     `<div class="summary-line"><span>${i.qty}× ${i.name}</span><span>$${(i.qty*i.price).toLocaleString('es-AR')}</span></div>`).join('');
   document.getElementById('summary-total-val').textContent='$'+total.toLocaleString('es-AR');
+  renderCongregacionField();
   showPage('checkout'); selectPay('mp');
 }
+
+// ══════════════════════════════════════════
+// CAMPO "CONGREGACIÓN" — solo para eventos que lo requieren (ej. Congreso de Hombres)
+// ══════════════════════════════════════════
+let _congregaciones = null;
+let _congregacionSelected = '';
+
+function eventNeedsCongregacion(ev) {
+  return !!ev?.title?.toLowerCase().includes('congreso de hombres');
+}
+
+async function renderCongregacionField() {
+  const wrap = document.getElementById('c-congregacion-wrap');
+  _congregacionSelected = '';
+  if (!eventNeedsCongregacion(state.currentEvent)) { wrap.classList.add('hidden'); wrap.innerHTML=''; return; }
+
+  if (!_congregaciones) {
+    try {
+      const res = await fetch('data/congregaciones.json');
+      _congregaciones = await res.json();
+    } catch(e) {
+      console.error('Error cargando congregaciones:', e);
+      _congregaciones = [];
+    }
+  }
+
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `
+    <label>Congregación *</label>
+    <div class="combo-wrap">
+      <input id="c-congregacion-input" type="text" autocomplete="off" placeholder="Buscá tu congregación...">
+      <div id="c-congregacion-list" class="combo-list hidden"></div>
+    </div>`;
+
+  const input = document.getElementById('c-congregacion-input');
+  const list = document.getElementById('c-congregacion-list');
+
+  const renderList = (items) => {
+    list.innerHTML = items.length
+      ? items.map(c=>`<div class="combo-item" data-val="${c.replace(/"/g,'&quot;')}">${c}</div>`).join('')
+      : '<div class="combo-empty">Sin resultados</div>';
+    list.classList.remove('hidden');
+  };
+
+  input.addEventListener('focus', () => renderList(_congregaciones));
+  input.addEventListener('input', () => {
+    _congregacionSelected = '';
+    const q = input.value.toLowerCase().trim();
+    renderList(q ? _congregaciones.filter(c=>c.toLowerCase().includes(q)) : _congregaciones);
+  });
+  list.addEventListener('click', (ev) => {
+    const item = ev.target.closest('.combo-item');
+    if (!item) return;
+    _congregacionSelected = item.dataset.val;
+    input.value = _congregacionSelected;
+    list.classList.add('hidden');
+  });
+}
+
+// Un solo listener global (no uno por cada vez que se abre el checkout) para cerrar el combo al clickear afuera
+document.addEventListener('click', (ev) => {
+  const wrap = document.getElementById('c-congregacion-wrap');
+  const list = document.getElementById('c-congregacion-list');
+  if (wrap && list && !wrap.contains(ev.target)) list.classList.add('hidden');
+});
 
 let _selectedPay='mp';
 function selectPay(m) {
@@ -274,12 +340,13 @@ async function submitOrder() {
   const tel=document.getElementById('c-tel').value.trim();
   if(!nombre||!apellido||!email){alert('Completá nombre, apellido y email');return;}
   if(!email.match(/^[^@]+@[^@]+\.[^@]+$/)){alert('Email inválido');return;}
+  if(eventNeedsCongregacion(state.currentEvent) && !_congregacionSelected){alert('Seleccioná tu congregación de la lista');return;}
   const items=Object.values(state.cart).filter(i=>i.qty>0);
   if(!items.length) return;
   const btn=document.getElementById('btn-pay'); btn.disabled=true; btn.textContent='Procesando...';
   try {
     const order=await API.createOrder({event_id:state.currentEvent.id,buyer_name:nombre,buyer_lastname:apellido,
-      buyer_email:email,buyer_phone:tel||null,payment_method:_selectedPay,
+      buyer_email:email,buyer_phone:tel||null,congregacion:_congregacionSelected||null,payment_method:_selectedPay,
       items:items.map(i=>({stage_id:i.stageId,qty:i.qty}))});
 
     if(_selectedPay==='transfer') {
@@ -714,18 +781,19 @@ function paintOrders(orders) {
   const cc=can('orders');
   document.getElementById('orders-wrap').innerHTML=`
     <table class="tbl" id="orders-tbl">
-      <thead><tr><th>Orden</th><th>Comprador</th><th>Email</th><th>Evento</th><th>Total</th><th>Método</th><th>Estado</th><th>Fecha</th>${cc?'<th></th>':''}</tr></thead>
-      <tbody>${orders.map(o=>`<tr data-s="${(o.id+o.buyer_name+(o.buyer_lastname||'')+(o.buyer_email||'')+(o.event_title||'')).toLowerCase()}">
+      <thead><tr><th>Orden</th><th>Comprador</th><th>Email</th><th>Evento</th><th>Congregación</th><th>Total</th><th>Método</th><th>Estado</th><th>Fecha</th>${cc?'<th></th>':''}</tr></thead>
+      <tbody>${orders.map(o=>`<tr data-s="${(o.id+o.buyer_name+(o.buyer_lastname||'')+(o.buyer_email||'')+(o.event_title||'')+(o.congregacion||'')).toLowerCase()}">
         <td style="font-family:'DM Mono',monospace;font-size:.78rem">${o.id}</td>
         <td>${o.buyer_name} ${o.buyer_lastname||''}</td>
         <td style="font-size:.78rem">${o.buyer_email||''}</td>
         <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem">${o.event_title||''}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">${o.congregacion||'—'}</td>
         <td><strong>$${(o.total||0).toLocaleString('es-AR')}</strong></td>
         <td style="font-size:.8rem">${{mp:'MP QR',card:'Tarjeta',transfer:'Transf.'}[o.payment_method]||'—'}</td>
         <td><span class="badge badge-${o.payment_status}">${{paid:'Pagado',pending:'Pendiente',failed:'Fallido'}[o.payment_status]||o.payment_status}</span></td>
         <td style="font-size:.78rem;color:var(--gray-600)">${(o.created_at||'').split('T')[0]}</td>
         ${cc?`<td>${o.payment_status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmPago('${o.id}')">✓ Confirmar</button>`:''}</td>`:''}
-      </tr>`).join('')||`<tr><td colspan="${cc?9:8}" style="text-align:center;padding:2rem;color:var(--gray-400)">Sin órdenes</td></tr>`}
+      </tr>`).join('')||`<tr><td colspan="${cc?10:9}" style="text-align:center;padding:2rem;color:var(--gray-400)">Sin órdenes</td></tr>`}
       </tbody></table>`;
 }
 

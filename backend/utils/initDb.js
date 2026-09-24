@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS orders (
   buyer_lastname TEXT NOT NULL,
   buyer_email TEXT NOT NULL,
   buyer_phone TEXT,
+  congregacion TEXT,
   total REAL NOT NULL,
   payment_method TEXT NOT NULL DEFAULT 'mp',
   payment_status TEXT NOT NULL DEFAULT 'pending' CHECK(payment_status IN ('pending','paid','failed','refunded')),

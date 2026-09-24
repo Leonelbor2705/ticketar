@@ -10,7 +10,7 @@ const { sendTicketEmail } = require('../utils/mailer');
 // POST /api/orders — Público: crear orden
 router.post('/', async (req, res) => {
   try {
-    const { event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, items, payment_method } = req.body;
+    const { event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, items, payment_method, congregacion } = req.body;
 
     if (!event_id || !buyer_name || !buyer_lastname || !buyer_email || !items?.length)
       return res.status(400).json({ error: 'Datos incompletos' });
@@ -38,9 +38,9 @@ router.post('/', async (req, res) => {
 
     const orderId = 'ORD-' + uuidv4().substring(0, 8).toUpperCase();
     await dbRun(
-      `INSERT INTO orders (id, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, total, payment_method, payment_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone || null, total, payment_method || 'mp',
+      `INSERT INTO orders (id, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, total, payment_method, payment_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [orderId, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone || null, congregacion || null, total, payment_method || 'mp',
        payment_method === 'transfer' ? 'pending' : 'pending']
     );
 

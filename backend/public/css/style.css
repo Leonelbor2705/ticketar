@@ -115,6 +115,17 @@ h3 { font-size: 1.15rem; font-weight: 700; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .form-group textarea { min-height: 90px; resize: vertical; }
 
+/* ══ SEARCHABLE COMBO (ej. Congregación) ══ */
+.combo-wrap { position: relative; }
+.combo-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: var(--white); border: 1.5px solid var(--gray-200); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); max-height: 240px; overflow-y: auto;
+}
+.combo-item { padding: 9px 14px; font-size: .9rem; cursor: pointer; }
+.combo-item:hover { background: var(--blue-pale); color: var(--blue); }
+.combo-empty { padding: 9px 14px; font-size: .85rem; color: var(--gray-400); }
+
 /* ══ HERO ══ */
 .hero {
   background: var(--blue); color: var(--white);

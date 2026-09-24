@@ -15,6 +15,12 @@ const db = new sqlite3.Database(dbPath, (err) => {
 db.run('PRAGMA foreign_keys = ON');
 db.run('PRAGMA journal_mode = WAL');
 
+// Migración ligera: agrega columnas nuevas a bases ya existentes sin perder datos.
+// ALTER TABLE ADD COLUMN falla si la columna ya existe — se ignora ese error puntual.
+db.run('ALTER TABLE orders ADD COLUMN congregacion TEXT', (err) => {
+  if (err && !/duplicate column/i.test(err.message)) console.error('Migración congregacion:', err.message);
+});
+
 // Promisify helpers
 const dbGet = (sql, params = []) =>
   new Promise((res, rej) => db.get(sql, params, (e, row) => e ? rej(e) : res(row)));
