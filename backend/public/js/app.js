@@ -1049,14 +1049,26 @@ async function showCreateUserModal() {
   openModal();
 }
 
-function showEditUserModal(id) {
+async function showEditUserModal(id) {
   const u=(window._users||[]).find(x=>x.id===id)||{};
+  const global = isGlobalAdminUser();
+  let eventField = '';
+  if (global) {
+    let events=[];
+    try{ events = (await API.getAllEvents()).filter(e=>e.active); }
+    catch(e){ console.error('Error cargando eventos:', e); }
+    eventField = `<div class="form-group"><label>Evento</label><select id="eu-event">
+      <option value="">— Sin evento (solo válido para admin global) —</option>
+      ${events.map(e=>`<option value="${e.id}" ${u.event_id===e.id?'selected':''}>${e.emoji||''} ${e.title}</option>`).join('')}
+    </select></div>`;
+  }
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Editar: ${u.username}</div>
     <div id="eu-error" class="alert alert-danger hidden"></div>
     <div class="form-group"><label>Nombre</label><input id="eu-name" value="${u.name||''}"></div>
     <div class="form-group"><label>Email</label><input id="eu-email" type="email" value="${u.email||''}"></div>
     <div class="form-group"><label>Nueva contraseña <small style="color:var(--gray-400)">(vacío = no cambia)</small></label><input id="eu-pass" type="password"></div>
+    ${eventField}
     <div class="form-group"><label>Estado</label><select id="eu-active">
       <option value="1" ${u.active?'selected':''}>Activo</option>
       <option value="0" ${!u.active?'selected':''}>Inactivo</option>
@@ -1075,8 +1087,10 @@ async function updateUser(id) {
   const email=document.getElementById('eu-email').value.trim();
   const pass=document.getElementById('eu-pass').value;
   const active=parseInt(document.getElementById('eu-active').value);
+  const eventSel=document.getElementById('eu-event');
+  const event_id = eventSel ? (eventSel.value?parseInt(eventSel.value):null) : undefined;
   try{
-    await API.updateUser(id,{name,email,active,...(pass?{password:pass}:{})});
+    await API.updateUser(id,{name,email,active,...(event_id!==undefined?{event_id}:{}),...(pass?{password:pass}:{})});
   }catch(e){
     console.error('Error actualizando usuario:', e);
     return showModalError(errEl, 'Error: ' + (e.message || 'no se pudo actualizar el usuario'));
