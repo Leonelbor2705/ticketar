@@ -19,8 +19,8 @@
     <div class="nav-links">
       <a onclick="showPage('home')" class="nav-link">Eventos</a>
       <a onclick="goToAdmin()" class="nav-link" id="admin-nav-link">Administración</a>
-      <span id="admin-user-pill" class="hidden"></span>
-      <button id="logout-btn" class="btn btn-outline btn-sm hidden" onclick="doLogout()">Salir</button>
+      <span id="admin-user-pill" class="hidden" onclick="goToAdmin()" style="cursor:pointer" title="Ir al panel de administración"></span>
+      <button id="logout-btn" class="btn btn-outline-white btn-sm hidden" onclick="doLogout()">Salir</button>
     </div>
     <button class="hamburger" id="hamburger" onclick="toggleMenu()">☰</button>
   </div>
