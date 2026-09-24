@@ -515,7 +515,7 @@ async function renderDashboard(c) {
             <div class="sales-detail-sub">(${sold.toLocaleString('es-AR')} vendidos${free?` | ${free.toLocaleString('es-AR')} gratis`:''})</div>
           </div>
         </div>
-        <button class="btn btn-secondary btn-sm" style="margin-top:1rem" onclick="downloadSalesExport()">⬇ Descargar archivo (CSV)</button>
+        <button class="btn btn-secondary btn-sm" style="margin-top:1rem" onclick="downloadSalesExport()">⬇ Descargar archivo (Excel)</button>
         <div class="sales-chart-wrap">${buildSalesChart(data.timeseries||[])}</div>
       </div>
       <div class="stats-grid" style="margin-top:1.5rem">

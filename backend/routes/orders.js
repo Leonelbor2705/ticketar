@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
+const ExcelJS = require('exceljs');
 const { dbGet, dbAll, dbRun } = require('../utils/db');
 const { auth, adminOnly, isGlobalAdmin, canAccessEvent } = require('../middleware/auth');
 const { sendTicketEmail } = require('../utils/mailer');
@@ -165,7 +166,7 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/orders/export — Admin: exportar las ventas pagadas a CSV (una fila por entrada)
+// GET /api/orders/export — Admin: exportar las ventas pagadas a un .xlsx real (una fila por entrada)
 // ?period= 1m | 3m | 6m | 1y | all (default all)
 const EXPORT_PERIOD_DAYS = { '1m': 30, '3m': 90, '6m': 182, '1y': 365, all: null };
 router.get('/export', auth, adminOnly, async (req, res) => {
@@ -187,21 +188,43 @@ router.get('/export', auth, adminOnly, async (req, res) => {
       ORDER BY o.created_at DESC
     `, params);
 
-    const header = ['Código', 'Nombre', 'Apellido', 'Email', 'Teléfono', 'Congregación', 'Evento', 'Etapa', 'Precio', 'Método de pago', 'Estado', 'Validado', 'Orden', 'Fecha'];
-    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const lines = [header.map(esc).join(',')];
-    for (const r of rows) {
-      lines.push([
-        r.code, r.buyer_name, r.buyer_lastname, r.buyer_email, r.buyer_phone || '', r.congregacion || '',
-        r.event_title, r.stage_name, r.price, r.payment_method, r.payment_status,
-        r.validated ? 'Sí' : 'No', r.order_id, r.created_at ? new Date(r.created_at).toISOString() : ''
-      ].map(esc).join(','));
-    }
-    const csv = '﻿' + lines.join('\r\n'); // BOM: Excel detecta UTF-8 correctamente
+    const PAYMENT_METHOD_LABEL = { mp: 'MP QR', card: 'Tarjeta', transfer: 'Transferencia', manual: 'Manual' };
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="ventas-${new Date().toISOString().slice(0, 10)}.csv"`);
-    res.send(csv);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Ventas');
+    sheet.columns = [
+      { header: 'Código', key: 'code', width: 14 },
+      { header: 'Nombre', key: 'buyer_name', width: 16 },
+      { header: 'Apellido', key: 'buyer_lastname', width: 16 },
+      { header: 'Email', key: 'buyer_email', width: 24 },
+      { header: 'Teléfono', key: 'buyer_phone', width: 16 },
+      { header: 'Congregación', key: 'congregacion', width: 22 },
+      { header: 'Evento', key: 'event_title', width: 22 },
+      { header: 'Etapa', key: 'stage_name', width: 16 },
+      { header: 'Precio', key: 'price', width: 12 },
+      { header: 'Método de pago', key: 'payment_method', width: 15 },
+      { header: 'Validado', key: 'validated', width: 10 },
+      { header: 'Orden', key: 'order_id', width: 14 },
+      { header: 'Fecha', key: 'created_at', width: 20 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    for (const r of rows) {
+      sheet.addRow({
+        code: r.code, buyer_name: r.buyer_name, buyer_lastname: r.buyer_lastname,
+        buyer_email: r.buyer_email, buyer_phone: r.buyer_phone || '', congregacion: r.congregacion || '',
+        event_title: r.event_title, stage_name: r.stage_name, price: r.price,
+        payment_method: PAYMENT_METHOD_LABEL[r.payment_method] || r.payment_method,
+        validated: r.validated ? 'Sí' : 'No', order_id: r.order_id,
+        created_at: r.created_at ? new Date(r.created_at) : ''
+      });
+    }
+    sheet.getColumn('price').numFmt = '#,##0.00';
+    sheet.getColumn('created_at').numFmt = 'dd/mm/yyyy hh:mm';
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="ventas-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error del servidor' });

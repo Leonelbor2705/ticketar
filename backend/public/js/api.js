@@ -58,7 +58,7 @@ const API = (() => {
     getMPPreference: (orderId) => req('POST', '/payments/mp/preference', { order_id: orderId }),
     getPaymentDashboard: (period) => req('GET', '/payments/dashboard' + (period ? '?period=' + period : '')),
 
-    // Descarga un archivo (CSV) autenticado: fetch no puede usar un <a href> plano
+    // Descarga un archivo (.xlsx) autenticado: fetch no puede usar un <a href> plano
     // porque el token va en el header Authorization, no en una cookie.
     async downloadOrdersExport(period) {
       const res = await fetch(BASE + '/orders/export' + (period ? '?period=' + period : ''), { headers: headers() });
@@ -69,7 +69,7 @@ const API = (() => {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `ventas-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.href = url; a.download = `ventas-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     },
