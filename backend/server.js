@@ -1,4 +1,5 @@
 // server.js — TicketAR Backend
+// DB persistida en volumen de Railway montado en /app/database — no se pierde en redeploys.
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
