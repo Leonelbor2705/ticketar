@@ -456,6 +456,7 @@ function doLogout() {
   state.currentAdmin=null; API.setToken(null);
   document.getElementById('admin-user-pill').classList.add('hidden');
   document.getElementById('logout-btn').classList.add('hidden');
+  document.getElementById('mobile-logout-link')?.classList.add('hidden');
   document.getElementById('admin-nav-link').style.display='';
   showPage('home');
 }
@@ -466,6 +467,7 @@ function buildAdminUI() {
   document.getElementById('admin-user-pill').textContent=u.name;
   document.getElementById('admin-user-pill').classList.remove('hidden');
   document.getElementById('logout-btn').classList.remove('hidden');
+  document.getElementById('mobile-logout-link')?.classList.remove('hidden');
   document.getElementById('admin-nav-link').style.display='none';
   const roleBadge={superadmin:'🔐 Superadmin',admin:'⚙️ Admin',vendedor:'🏷️ Vendedor'};
   document.getElementById('sidebar-user').innerHTML=`<strong>${u.name}</strong><br><span style="font-size:.72rem;opacity:.7">${roleBadge[u.role]||u.role}</span>`;
