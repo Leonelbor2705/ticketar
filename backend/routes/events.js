@@ -118,13 +118,17 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
     const event = await dbGet('SELECT * FROM events WHERE id = ?', [req.params.id]);
     if (!event) return res.status(404).json({ error: 'Evento no encontrado' });
 
+    // image_url distingue "no vino en el body" (undefined => no tocar) de
+    // "vino explícitamente null/''" (el admin le dio a Quitar imagen).
+    const newImageUrl = image_url !== undefined ? (image_url || null) : event.image_url;
+
     await dbRun(
       `UPDATE events SET title=?, description=?, emoji=?, date=?, time=?, venue=?, city=?, image_url=?, active=?, congregacion_required=?
        WHERE id=?`,
       [
         title || event.title, description ?? event.description, emoji || event.emoji,
         date || event.date, time || event.time, venue || event.venue, city || event.city,
-        image_url ?? event.image_url, active !== undefined ? active : event.active,
+        newImageUrl, active !== undefined ? active : event.active,
         congregacion_required !== undefined ? (congregacion_required ? 1 : 0) : event.congregacion_required,
         req.params.id
       ]

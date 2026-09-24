@@ -184,8 +184,11 @@ async function openEvent(id) {
 
 function renderEventDetail() {
   const e=state.currentEvent;
+  const banner = e.image_url
+    ? `<div class="event-detail-banner"><img src="${e.image_url}" alt="${e.title}"></div>`
+    : `<div class="event-emoji">${e.emoji||'🎪'}</div>`;
   document.getElementById('event-detail-main').innerHTML=`
-    <div class="event-emoji">${e.emoji||'🎪'}</div>
+    ${banner}
     <h1>${e.title}</h1>
     <div class="event-detail-meta">📅 ${formatDate(e.date)} · ⏰ ${e.time}<br>📍 ${e.venue}, ${e.city}</div>
     <p class="event-desc">${e.description||''}</p>`;
@@ -610,8 +613,65 @@ async function renderAdminEvents(c) {
     </tbody></table></div></div>`;
 }
 
+// ══════════════════════════════════════════
+// IMAGEN DEL EVENTO — el admin (general o de su propio evento) sube un PNG/JPG,
+// se redimensiona en el navegador y se guarda como data URI en events.image_url
+// (sin depender de un disco del servidor, que en Railway no persiste entre deploys).
+// ══════════════════════════════════════════
+function readEventImageAsDataURL(file, maxW=900, maxH=500, quality=0.85) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve(null);
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return reject(new Error('Formato no soportado: usá PNG, JPG o WEBP'));
+    if (file.size > 6*1024*1024) return reject(new Error('La imagen es muy pesada (máx 6MB)'));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Archivo de imagen inválido'));
+      img.onload = () => {
+        let { width, height } = img;
+        const ratio = Math.min(1, maxW/width, maxH/height);
+        width = Math.round(width*ratio); height = Math.round(height*ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL(file.type==='image/png' ? 'image/png' : 'image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+let _neImageData = null, _eeImageData = undefined;
+
+async function onEventImagePicked(input, prefix) {
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    const dataUrl = await readEventImageAsDataURL(file);
+    if (prefix==='ne') _neImageData = dataUrl; else _eeImageData = dataUrl;
+    const prev = document.getElementById(prefix+'-image-preview');
+    prev.classList.remove('hidden');
+    prev.querySelector('img').src = dataUrl;
+    prev.querySelector('button')?.classList.remove('hidden');
+  } catch(e) {
+    alert(e.message||'No se pudo procesar la imagen');
+    input.value='';
+  }
+}
+
+function removeEventImage(prefix) {
+  if (prefix==='ne') _neImageData = null; else _eeImageData = null;
+  const input = document.getElementById(prefix+'-image-file');
+  if (input) input.value='';
+  const prev = document.getElementById(prefix+'-image-preview');
+  if (prev) prev.classList.add('hidden');
+}
+
 function showCreateEventModal() {
   console.log('[TicketAR] Abriendo modal de nuevo evento');
+  _neImageData = null;
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Nuevo Evento</div>
     <div id="ne-error" class="alert alert-danger hidden"></div>
@@ -625,7 +685,11 @@ function showCreateEventModal() {
       <div class="form-group"><label>Ciudad *</label><input id="ne-city" placeholder="Buenos Aires"></div>
     </div>
     <div class="form-group"><label>Descripción</label><textarea id="ne-desc" placeholder="Descripción..."></textarea></div>
-    <div class="form-group"><label>Emoji</label><input id="ne-emoji" type="text" placeholder="🎵" style="width:70px"></div>
+    <div class="form-group"><label>Emoji (se usa si no subís una imagen)</label><input id="ne-emoji" type="text" placeholder="🎵" style="width:70px"></div>
+    <div class="form-group"><label>Imagen del evento (PNG/JPG, opcional)</label>
+      <input id="ne-image-file" type="file" accept="image/png,image/jpeg,image/webp" onchange="onEventImagePicked(this,'ne')">
+      <div id="ne-image-preview" class="image-preview hidden"><img alt="Vista previa"><button type="button" class="btn btn-secondary btn-sm" onclick="removeEventImage('ne')">Quitar</button></div>
+    </div>
     <div class="form-group"><label style="display:flex;align-items:center;gap:.5rem;font-weight:normal"><input id="ne-congregacion" type="checkbox" style="width:auto"> Pedir "Congregación" en la compra e inscripción manual</label></div>
     <hr style="margin:1rem 0;border-color:var(--gray-200)">
     <h3 style="color:var(--blue);font-size:1rem;margin-bottom:.8rem">Primera etapa de venta</h3>
@@ -663,7 +727,7 @@ async function submitNewEvent() {
     console.log('[TicketAR] Datos del formulario:', {title,date,venue,city,sName,sPrice,sQty});
     if(!title||!date||!venue||!city||!sName||!sPrice||!sQty) return showNeError('Completá todos los campos obligatorios (*), incluyendo Título y Fecha arriba del todo.');
     if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
-    await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,congregacion_required:document.getElementById('ne-congregacion').checked,stages:[{name:sName,price:sPrice,quantity:sQty}]});
+    await API.createEvent({title,date,time:document.getElementById('ne-time').value,venue,city,emoji:document.getElementById('ne-emoji').value||'🎪',description:document.getElementById('ne-desc').value,image_url:_neImageData,congregacion_required:document.getElementById('ne-congregacion').checked,stages:[{name:sName,price:sPrice,quantity:sQty}]});
     console.log('[TicketAR] Evento creado OK');
     closeModal();
     await renderAdminEvents(document.getElementById('admin-main'));
@@ -750,6 +814,7 @@ function showEditEventModal(id) {
   const ev = (window._events||[]).find(e=>e.id===id);
   if (!ev) return alert('No se encontró el evento');
   console.log('[TicketAR] Abriendo modal de edición de evento', id);
+  _eeImageData = undefined;
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Editar Evento</div>
     <div id="ee-error" class="alert alert-danger hidden"></div>
@@ -764,11 +829,15 @@ function showEditEventModal(id) {
     </div>
     <div class="form-group"><label>Descripción</label><textarea id="ee-desc">${ev.description||''}</textarea></div>
     <div class="form-row">
-      <div class="form-group"><label>Emoji</label><input id="ee-emoji" type="text" value="${ev.emoji||'🎪'}" style="width:70px"></div>
+      <div class="form-group"><label>Emoji (se usa si no hay imagen)</label><input id="ee-emoji" type="text" value="${ev.emoji||'🎪'}" style="width:70px"></div>
       <div class="form-group"><label>Estado</label><select id="ee-active">
         <option value="1" ${ev.active?'selected':''}>Activo</option>
         <option value="0" ${!ev.active?'selected':''}>Inactivo</option>
       </select></div>
+    </div>
+    <div class="form-group"><label>Imagen del evento (PNG/JPG, opcional)</label>
+      <input id="ee-image-file" type="file" accept="image/png,image/jpeg,image/webp" onchange="onEventImagePicked(this,'ee')">
+      <div id="ee-image-preview" class="image-preview ${ev.image_url?'':'hidden'}"><img alt="Vista previa" src="${ev.image_url||''}"><button type="button" class="btn btn-secondary btn-sm ${ev.image_url?'':'hidden'}" onclick="removeEventImage('ee')">Quitar</button></div>
     </div>
     <div class="form-group"><label style="display:flex;align-items:center;gap:.5rem;font-weight:normal"><input id="ee-congregacion" type="checkbox" style="width:auto" ${eventNeedsCongregacion(ev)?'checked':''}> Pedir "Congregación" en la compra e inscripción manual</label></div>
     <div class="modal-footer">
@@ -795,6 +864,7 @@ async function submitEditEvent(id) {
       emoji: document.getElementById('ee-emoji').value || '🎪',
       description: document.getElementById('ee-desc').value,
       active: parseInt(document.getElementById('ee-active').value),
+      image_url: _eeImageData,
       congregacion_required: document.getElementById('ee-congregacion').checked
     });
     closeModal();
