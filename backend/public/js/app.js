@@ -491,22 +491,68 @@ function adminSection(s) {
 // ══════════════════════════════════════════
 // DASHBOARD
 // ══════════════════════════════════════════
+const DASH_PERIODS = { '1m':'Último mes', '3m':'Último trimestre', '6m':'Último semestre', '1y':'Último año', all:'Todo' };
+let _dashPeriod = '6m';
+
 async function renderDashboard(c) {
-  c.innerHTML=`<div class="admin-page-title">Dashboard</div><div class="stats-grid"><div class="stat-card"><div class="stat-label">Cargando...</div><div class="stat-value">–</div></div></div>`;
+  c.innerHTML=`<div class="admin-page-title">Ventas</div><div class="stats-grid"><div class="stat-card"><div class="stat-label">Cargando...</div><div class="stat-value">–</div></div></div>`;
   try {
-    const data=await API.getPaymentDashboard(); const s=data.stats;
-    c.innerHTML=`<div class="admin-page-title">Dashboard</div>
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Ingresos Totales</div><div class="stat-value">$${(s.total_revenue||0).toLocaleString('es-AR')}</div><div class="stat-sub">Pagos confirmados</div></div>
+    const data=await API.getPaymentDashboard(_dashPeriod); const s=data.stats;
+    const sold=s.sold_tickets||0, free=s.free_tickets||0, totalTickets=s.total_tickets||0;
+    c.innerHTML=`<div class="admin-header-row">
+        <div class="admin-page-title" style="margin:0">Ventas</div>
+        <select id="dash-period" class="period-select" onchange="onDashPeriodChange(this.value)">
+          ${Object.entries(DASH_PERIODS).map(([v,l])=>`<option value="${v}" ${v===_dashPeriod?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="sales-summary-card">
+        <div class="sales-total-label">ARS</div>
+        <div class="sales-total">$${(s.total_revenue||0).toLocaleString('es-AR')}</div>
+        <div class="sales-detail-row"><span>Subtotal tickets</span><strong>$${(s.total_revenue||0).toLocaleString('es-AR')}</strong></div>
+        <div class="sales-detail-row">
+          <span>Cantidad de tickets</span>
+          <div style="text-align:right"><strong>${totalTickets.toLocaleString('es-AR')}</strong>
+            <div class="sales-detail-sub">(${sold.toLocaleString('es-AR')} vendidos${free?` | ${free.toLocaleString('es-AR')} gratis`:''})</div>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:1rem" onclick="downloadSalesExport()">⬇ Descargar archivo (CSV)</button>
+        <div class="sales-chart-wrap">${buildSalesChart(data.timeseries||[])}</div>
+      </div>
+      <div class="stats-grid" style="margin-top:1.5rem">
         <div class="stat-card red"><div class="stat-label">Hoy</div><div class="stat-value">$${(s.today_revenue||0).toLocaleString('es-AR')}</div></div>
-        <div class="stat-card green"><div class="stat-label">Entradas Vendidas</div><div class="stat-value">${s.total_tickets||0}</div></div>
-        <div class="stat-card gray"><div class="stat-label">Pendientes</div><div class="stat-value">${s.pending_orders||0}</div></div>
-      </div>${buildOrdersTable(data.recentOrders||[])}`;
+        <div class="stat-card green"><div class="stat-label">Entradas validadas</div><div class="stat-value">${s.used_tickets||0}</div></div>
+        <div class="stat-card gray"><div class="stat-label">Órdenes pendientes</div><div class="stat-value">${s.pending_orders||0}</div></div>
+      </div>
+      ${buildOrdersTable(data.recentOrders||[])}`;
   } catch(e) {
     console.error('Error cargando dashboard:', e);
-    c.innerHTML=`<div class="admin-page-title">Dashboard</div>
+    c.innerHTML=`<div class="admin-page-title">Ventas</div>
       <div class="alert alert-danger">No se pudo cargar el dashboard: ${e.message||'error de conexión'}. ${e.message&&e.message.toLowerCase().includes('token')?'Tu sesión expiró, salí y volvé a entrar.':'Intentá recargar la página.'}</div>`;
   }
+}
+
+function onDashPeriodChange(v) { _dashPeriod = v; renderDashboard(document.getElementById('admin-main')); }
+
+async function downloadSalesExport() {
+  try { await API.downloadOrdersExport(_dashPeriod); }
+  catch(e) { console.error('Error exportando ventas:', e); alert('No se pudo descargar el archivo: '+(e.message||'error de conexión')); }
+}
+
+function buildSalesChart(ts) {
+  if (!ts.length) return '<div style="padding:2rem;text-align:center;color:var(--gray-400)">Sin ventas en este período</div>';
+  const W=680, H=220, PAD=24;
+  const revs = ts.map(p=>Number(p.revenue)||0);
+  const max = Math.max(...revs, 1);
+  const stepX = ts.length>1 ? (W-PAD*2)/(ts.length-1) : 0;
+  const pts = revs.map((r,i)=>[PAD+i*stepX, H-PAD-(r/max)*(H-PAD*2)]);
+  const line = pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  const area = `${line} L${pts[pts.length-1][0].toFixed(1)},${H-PAD} L${pts[0][0].toFixed(1)},${H-PAD} Z`;
+  const fmtShort = d => { const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString('es-AR',{day:'2-digit',month:'short'}); };
+  return `<svg viewBox="0 0 ${W} ${H}" class="sales-chart-svg" preserveAspectRatio="none">
+      <path d="${area}" class="sales-chart-area"></path>
+      <path d="${line}" class="sales-chart-line"></path>
+    </svg>
+    <div class="sales-chart-labels"><span>${fmtShort(ts[0].date)}</span><span>${fmtShort(ts[ts.length-1].date)}</span></div>`;
 }
 
 function buildOrdersTable(orders) {

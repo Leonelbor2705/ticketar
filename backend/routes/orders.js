@@ -4,7 +4,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
 const { dbGet, dbAll, dbRun } = require('../utils/db');
-const { auth, isGlobalAdmin, canAccessEvent } = require('../middleware/auth');
+const { auth, adminOnly, isGlobalAdmin, canAccessEvent } = require('../middleware/auth');
 const { sendTicketEmail } = require('../utils/mailer');
 
 // Lógica compartida: valida stock, crea la orden y emite los tickets.
@@ -161,6 +161,49 @@ router.get('/', auth, async (req, res) => {
     const totalRow = await dbGet(`SELECT COUNT(*) as total FROM orders o ${whereStr}`, params);
     res.json({ orders, total: totalRow.total, page: parseInt(page), limit: parseInt(limit) });
   } catch (e) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// GET /api/orders/export — Admin: exportar las ventas pagadas a CSV (una fila por entrada)
+// ?period= 1m | 3m | 6m | 1y | all (default all)
+const EXPORT_PERIOD_DAYS = { '1m': 30, '3m': 90, '6m': 182, '1y': 365, all: null };
+router.get('/export', auth, adminOnly, async (req, res) => {
+  try {
+    const days = EXPORT_PERIOD_DAYS[req.query.period] !== undefined ? EXPORT_PERIOD_DAYS[req.query.period] : null;
+    let where = [`o.payment_status = 'paid'`];
+    let params = [];
+    if (!isGlobalAdmin(req.user)) { where.push('o.event_id = ?'); params.push(req.user.event_id); }
+    if (days) where.push(`o.created_at >= CURRENT_DATE - INTERVAL '${days} days'`);
+
+    const rows = await dbAll(`
+      SELECT t.code, t.buyer_name, t.buyer_lastname, o.buyer_email, o.buyer_phone, o.congregacion,
+        e.title as event_title, t.stage_name, t.price, o.payment_method, o.payment_status,
+        t.validated, o.id as order_id, o.created_at
+      FROM tickets t
+      JOIN orders o ON o.id = t.order_id
+      JOIN events e ON e.id = o.event_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY o.created_at DESC
+    `, params);
+
+    const header = ['Código', 'Nombre', 'Apellido', 'Email', 'Teléfono', 'Congregación', 'Evento', 'Etapa', 'Precio', 'Método de pago', 'Estado', 'Validado', 'Orden', 'Fecha'];
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [header.map(esc).join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.code, r.buyer_name, r.buyer_lastname, r.buyer_email, r.buyer_phone || '', r.congregacion || '',
+        r.event_title, r.stage_name, r.price, r.payment_method, r.payment_status,
+        r.validated ? 'Sí' : 'No', r.order_id, r.created_at ? new Date(r.created_at).toISOString() : ''
+      ].map(esc).join(','));
+    }
+    const csv = '﻿' + lines.join('\r\n'); // BOM: Excel detecta UTF-8 correctamente
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ventas-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });

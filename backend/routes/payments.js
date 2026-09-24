@@ -124,29 +124,40 @@ router.get('/mp/status/:orderId', async (req, res) => {
 });
 
 // GET /api/payments/dashboard — Admin: resumen financiero (el admin de evento solo ve el suyo)
+// ?period= 1m | 3m | 6m | 1y | all (default 6m) — recorta el rango de ingresos/gráfico
+const PERIOD_DAYS = { '1m': 30, '3m': 90, '6m': 182, '1y': 365, all: null };
 router.get('/dashboard', auth, adminOnly, async (req, res) => {
   try {
     const scoped = !isGlobalAdmin(req.user);
-    const evFilter = scoped ? 'WHERE event_id = ?' : '';
-    const evFilterO = scoped ? 'WHERE o.event_id = ?' : '';
+    const days = PERIOD_DAYS[req.query.period] !== undefined ? PERIOD_DAYS[req.query.period] : PERIOD_DAYS['6m'];
     const evParams = scoped ? [req.user.event_id] : [];
+    const periodClause = days ? `AND o.created_at >= CURRENT_DATE - INTERVAL '${days} days'` : '';
 
     const stats = await dbGet(`
       SELECT
         COUNT(*) as total_orders,
-        SUM(CASE WHEN payment_status='paid' THEN 1 ELSE 0 END) as paid_orders,
-        SUM(CASE WHEN payment_status='pending' THEN 1 ELSE 0 END) as pending_orders,
-        SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END) as total_revenue,
-        SUM(CASE WHEN payment_status='paid' AND created_at::date = CURRENT_DATE THEN total ELSE 0 END) as today_revenue
-      FROM orders ${evFilter}
+        SUM(CASE WHEN o.payment_status='paid' THEN 1 ELSE 0 END) as paid_orders,
+        SUM(CASE WHEN o.payment_status='pending' THEN 1 ELSE 0 END) as pending_orders,
+        SUM(CASE WHEN o.payment_status='paid' AND o.created_at::date = CURRENT_DATE THEN o.total ELSE 0 END) as today_revenue,
+        SUM(CASE WHEN o.payment_status='paid' ${periodClause} THEN o.total ELSE 0 END) as total_revenue
+      FROM orders o WHERE 1=1 ${scoped ? 'AND o.event_id = ?' : ''}
     `, evParams);
 
     const ticketStats = await dbGet(`
       SELECT COUNT(*) as total_tickets,
-        SUM(CASE WHEN validated=1 THEN 1 ELSE 0 END) as used_tickets
+        SUM(CASE WHEN t.price > 0 THEN 1 ELSE 0 END) as sold_tickets,
+        SUM(CASE WHEN t.price = 0 THEN 1 ELSE 0 END) as free_tickets,
+        SUM(CASE WHEN t.validated=1 THEN 1 ELSE 0 END) as used_tickets
       FROM tickets t
       JOIN orders o ON o.id=t.order_id
-      WHERE o.payment_status='paid' ${scoped ? 'AND o.event_id = ?' : ''}
+      WHERE o.payment_status='paid' ${periodClause} ${scoped ? 'AND o.event_id = ?' : ''}
+    `, evParams);
+
+    const timeseries = await dbAll(`
+      SELECT o.created_at::date as date, SUM(o.total) as revenue
+      FROM orders o
+      WHERE o.payment_status='paid' ${periodClause} ${scoped ? 'AND o.event_id = ?' : ''}
+      GROUP BY o.created_at::date ORDER BY date ASC
     `, evParams);
 
     const byEvent = await dbAll(`
@@ -163,12 +174,13 @@ router.get('/dashboard', auth, adminOnly, async (req, res) => {
     const recentOrders = await dbAll(`
       SELECT o.id, o.buyer_name, o.buyer_lastname, o.total, o.payment_status, o.created_at, e.title as event_title
       FROM orders o JOIN events e ON e.id=o.event_id
-      ${evFilterO}
+      WHERE 1=1 ${scoped ? 'AND o.event_id = ?' : ''}
       ORDER BY o.created_at DESC LIMIT 10
     `, evParams);
 
-    res.json({ stats: { ...stats, ...ticketStats }, byEvent, recentOrders });
+    res.json({ stats: { ...stats, ...ticketStats }, timeseries, byEvent, recentOrders });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
