@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { dbGet, dbAll, dbRun } = require('../utils/db');
-const { auth, adminOnly } = require('../middleware/auth');
+const { auth, adminOnly, isGlobalAdmin } = require('../middleware/auth');
 
 // Lazy-load MercadoPago to avoid crashing if credentials not set
 let mpClient = null;
@@ -123,9 +123,14 @@ router.get('/mp/status/:orderId', async (req, res) => {
   res.json(order);
 });
 
-// GET /api/payments/dashboard — Admin: resumen financiero
+// GET /api/payments/dashboard — Admin: resumen financiero (el admin de evento solo ve el suyo)
 router.get('/dashboard', auth, adminOnly, async (req, res) => {
   try {
+    const scoped = !isGlobalAdmin(req.user);
+    const evFilter = scoped ? 'WHERE event_id = ?' : '';
+    const evFilterO = scoped ? 'WHERE o.event_id = ?' : '';
+    const evParams = scoped ? [req.user.event_id] : [];
+
     const stats = await dbGet(`
       SELECT
         COUNT(*) as total_orders,
@@ -133,16 +138,16 @@ router.get('/dashboard', auth, adminOnly, async (req, res) => {
         SUM(CASE WHEN payment_status='pending' THEN 1 ELSE 0 END) as pending_orders,
         SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END) as total_revenue,
         SUM(CASE WHEN payment_status='paid' AND created_at::date = CURRENT_DATE THEN total ELSE 0 END) as today_revenue
-      FROM orders
-    `);
+      FROM orders ${evFilter}
+    `, evParams);
 
     const ticketStats = await dbGet(`
       SELECT COUNT(*) as total_tickets,
         SUM(CASE WHEN validated=1 THEN 1 ELSE 0 END) as used_tickets
       FROM tickets t
       JOIN orders o ON o.id=t.order_id
-      WHERE o.payment_status='paid'
-    `);
+      WHERE o.payment_status='paid' ${scoped ? 'AND o.event_id = ?' : ''}
+    `, evParams);
 
     const byEvent = await dbAll(`
       SELECT e.title, e.emoji,
@@ -151,14 +156,16 @@ router.get('/dashboard', auth, adminOnly, async (req, res) => {
         SUM(CASE WHEN o.payment_status='paid' THEN 1 ELSE 0 END) as paid_count
       FROM events e
       LEFT JOIN orders o ON o.event_id=e.id
+      ${scoped ? 'WHERE e.id = ?' : ''}
       GROUP BY e.id ORDER BY revenue DESC LIMIT 10
-    `);
+    `, evParams);
 
     const recentOrders = await dbAll(`
       SELECT o.id, o.buyer_name, o.buyer_lastname, o.total, o.payment_status, o.created_at, e.title as event_title
       FROM orders o JOIN events e ON e.id=o.event_id
+      ${evFilterO}
       ORDER BY o.created_at DESC LIMIT 10
-    `);
+    `, evParams);
 
     res.json({ stats: { ...stats, ...ticketStats }, byEvent, recentOrders });
   } catch (e) {

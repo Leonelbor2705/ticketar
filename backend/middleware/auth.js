@@ -16,9 +16,18 @@ const auth = (req, res, next) => {
 };
 
 const adminOnly = (req, res, next) => {
-  if (!['admin', 'superadmin'].includes(req.user?.role))
+  if (req.user?.role !== 'admin')
     return res.status(403).json({ error: 'Se requieren permisos de administrador' });
   next();
 };
 
-module.exports = { auth, adminOnly };
+// Admin global = sin event_id (solo el usuario seedeado por ADMIN_USERNAME/ADMIN_PASSWORD
+// en Railway). Cualquier otro admin o vendedor queda atado a un evento específico.
+const isGlobalAdmin = (user) => user?.role === 'admin' && (user.event_id === null || user.event_id === undefined);
+
+// true si el usuario puede operar sobre ese event_id: admin global (cualquiera),
+// o admin/vendedor cuyo event_id coincide.
+const canAccessEvent = (user, eventId) =>
+  isGlobalAdmin(user) || String(user?.event_id) === String(eventId);
+
+module.exports = { auth, adminOnly, isGlobalAdmin, canAccessEvent };

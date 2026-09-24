@@ -4,7 +4,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
 const { dbGet, dbAll, dbRun } = require('../utils/db');
-const { auth } = require('../middleware/auth');
+const { auth, isGlobalAdmin, canAccessEvent } = require('../middleware/auth');
 const { sendTicketEmail } = require('../utils/mailer');
 
 // Lógica compartida: valida stock, crea la orden y emite los tickets.
@@ -98,10 +98,16 @@ router.post('/manual', auth, async (req, res) => {
     if (!['admin', 'vendedor'].includes(req.user.role))
       return res.status(403).json({ error: 'No tenés permiso para registrar inscripciones' });
 
-    const { event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, items, congregacion } = req.body;
+    let { event_id } = req.body;
+    const { buyer_name, buyer_lastname, buyer_email, buyer_phone, items, congregacion } = req.body;
+
+    // Admin/vendedor de evento solo puede inscribir gente para su propio evento
+    if (!isGlobalAdmin(req.user)) event_id = req.user.event_id;
 
     if (!event_id || !buyer_name || !buyer_lastname || !buyer_email || !items?.length)
       return res.status(400).json({ error: 'Datos incompletos' });
+    if (!canAccessEvent(req.user, event_id))
+      return res.status(403).json({ error: 'No tenés permiso sobre este evento' });
 
     const { orderId, total, tickets, event } = await createOrderAndTickets({
       event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, items,
@@ -129,7 +135,12 @@ router.get('/', auth, async (req, res) => {
     let where = [];
     let params = [];
 
-    if (event_id) { where.push('o.event_id = ?'); params.push(event_id); }
+    if (!isGlobalAdmin(req.user)) {
+      // Admin/vendedor de evento solo ve sus propias órdenes, sin importar qué pida event_id
+      where.push('o.event_id = ?'); params.push(req.user.event_id);
+    } else if (event_id) {
+      where.push('o.event_id = ?'); params.push(event_id);
+    }
     if (status) { where.push('o.payment_status = ?'); params.push(status); }
     if (search) {
       where.push('(o.buyer_name LIKE ? OR o.buyer_lastname LIKE ? OR o.buyer_email LIKE ? OR o.id LIKE ?)');
@@ -174,6 +185,11 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/orders/:id/confirm — Admin: confirmar pago manual
 router.post('/:id/confirm', auth, async (req, res) => {
+  const order = await dbGet('SELECT event_id FROM orders WHERE id=?', [req.params.id]);
+  if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+  if (!canAccessEvent(req.user, order.event_id))
+    return res.status(403).json({ error: 'No tenés permiso sobre esta orden' });
+
   await dbRun(
     `UPDATE orders SET payment_status='paid', updated_at=CURRENT_TIMESTAMP WHERE id=?`,
     [req.params.id]

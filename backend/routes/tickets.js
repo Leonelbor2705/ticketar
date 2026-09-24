@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { dbGet, dbRun } = require('../utils/db');
-const { auth } = require('../middleware/auth');
+const { auth, isGlobalAdmin } = require('../middleware/auth');
 
 // POST /api/tickets/validate — Validar entrada por código
 router.post('/validate', auth, async (req, res) => {
@@ -11,13 +11,17 @@ router.post('/validate', auth, async (req, res) => {
     if (!code) return res.status(400).json({ error: 'Código requerido' });
 
     const ticket = await dbGet(
-      `SELECT t.*, o.payment_status, o.buyer_email
-       FROM tickets t JOIN orders o ON o.id=t.order_id
+      `SELECT t.*, o.payment_status, o.buyer_email, s.event_id
+       FROM tickets t
+       JOIN orders o ON o.id=t.order_id
+       JOIN ticket_stages s ON s.id=t.stage_id
        WHERE t.code=?`,
       [code.trim().toUpperCase()]
     );
 
     if (!ticket) return res.json({ valid: false, reason: 'Código no encontrado' });
+    if (!isGlobalAdmin(req.user) && String(ticket.event_id) !== String(req.user.event_id))
+      return res.json({ valid: false, reason: 'Esta entrada no pertenece a tu evento' });
     if (ticket.payment_status !== 'paid') return res.json({ valid: false, reason: 'Pago pendiente o rechazado' });
     if (ticket.validated) {
       return res.json({

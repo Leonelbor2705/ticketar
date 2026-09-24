@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { dbGet, dbAll, dbRun } = require('../utils/db');
-const { auth, adminOnly } = require('../middleware/auth');
+const { auth, adminOnly, isGlobalAdmin, canAccessEvent } = require('../middleware/auth');
 
 // GET /api/events — Público: listar eventos activos
 router.get('/', async (req, res) => {
@@ -33,18 +33,20 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/events/all — Admin: todos los eventos (incluso inactivos)
+// GET /api/events/all — Admin/vendedor: eventos (el admin global ve todos, el resto solo el suyo)
 router.get('/all', auth, async (req, res) => {
   try {
+    const scoped = !isGlobalAdmin(req.user);
     const events = await dbAll(`
       SELECT e.*,
         SUM(s.sold) as total_sold,
         SUM(s.quantity) as total_qty
       FROM events e
       LEFT JOIN ticket_stages s ON s.event_id = e.id
+      ${scoped ? 'WHERE e.id = ?' : ''}
       GROUP BY e.id
       ORDER BY e.created_at DESC
-    `);
+    `, scoped ? [req.user.event_id] : []);
     for (const ev of events) {
       ev.stages = await dbAll('SELECT * FROM ticket_stages WHERE event_id = ? ORDER BY sort_order', [ev.id]);
     }
@@ -69,9 +71,12 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/events — Admin: crear evento
+// POST /api/events — Solo el admin global crea eventos nuevos
 router.post('/', auth, adminOnly, async (req, res) => {
   try {
+    if (!isGlobalAdmin(req.user))
+      return res.status(403).json({ error: 'Solo el administrador general puede crear eventos' });
+
     const { title, description, emoji, date, time, venue, city, image_url, stages } = req.body;
     if (!title || !date || !venue || !city)
       return res.status(400).json({ error: 'title, date, venue y city son requeridos' });
@@ -103,9 +108,12 @@ router.post('/', auth, adminOnly, async (req, res) => {
   }
 });
 
-// PUT /api/events/:id — Admin: editar evento
+// PUT /api/events/:id — Admin global, o admin del propio evento
 router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
+    if (!canAccessEvent(req.user, req.params.id))
+      return res.status(403).json({ error: 'No tenés permiso sobre este evento' });
+
     const { title, description, emoji, date, time, venue, city, image_url, active } = req.body;
     const event = await dbGet('SELECT * FROM events WHERE id = ?', [req.params.id]);
     if (!event) return res.status(404).json({ error: 'Evento no encontrado' });
@@ -126,15 +134,20 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
   }
 });
 
-// DELETE /api/events/:id — Admin: desactivar evento
+// DELETE /api/events/:id — Admin global, o admin del propio evento (activar/desactivar)
 router.delete('/:id', auth, adminOnly, async (req, res) => {
+  if (!canAccessEvent(req.user, req.params.id))
+    return res.status(403).json({ error: 'No tenés permiso sobre este evento' });
   await dbRun('UPDATE events SET active = 0 WHERE id = ?', [req.params.id]);
   res.json({ success: true });
 });
 
-// POST /api/events/:id/stages — Admin: agregar etapa
+// POST /api/events/:id/stages — Admin global, o admin del propio evento
 router.post('/:id/stages', auth, adminOnly, async (req, res) => {
   try {
+    if (!canAccessEvent(req.user, req.params.id))
+      return res.status(403).json({ error: 'No tenés permiso sobre este evento' });
+
     const { name, price, quantity, active, sort_order } = req.body;
     if (!name || !price || !quantity)
       return res.status(400).json({ error: 'name, price y quantity son requeridos' });
@@ -153,9 +166,12 @@ router.post('/:id/stages', auth, adminOnly, async (req, res) => {
   }
 });
 
-// PUT /api/events/:id/stages/:stageId — Admin: editar etapa
+// PUT /api/events/:id/stages/:stageId — Admin global, o admin del propio evento
 router.put('/:id/stages/:stageId', auth, adminOnly, async (req, res) => {
   try {
+    if (!canAccessEvent(req.user, req.params.id))
+      return res.status(403).json({ error: 'No tenés permiso sobre este evento' });
+
     const { name, price, quantity, active } = req.body;
     const stage = await dbGet('SELECT * FROM ticket_stages WHERE id = ? AND event_id = ?', [req.params.stageId, req.params.id]);
     if (!stage) return res.status(404).json({ error: 'Etapa no encontrada' });

@@ -3,14 +3,12 @@
 
 // ══════════════════════════════════════════
 // SISTEMA DE ROLES Y PERMISOS
-// superadmin → todo, incluyendo asignar roles
-// admin      → eventos, órdenes, usuarios (sin superadmins)
-// vendedor   → solo órdenes y validar QR
+// admin      → sin event_id = global (leonelbor); con event_id = gestiona SOLO ese evento
+// vendedor   → siempre atado a un evento: solo sus órdenes y validar QR de ese evento
 // ══════════════════════════════════════════
 const PERMISOS = {
-  superadmin: ['dashboard','events','orders','scanner','users','payments','roles'],
-  admin:      ['dashboard','events','orders','scanner','users','payments'],
-  vendedor:   ['orders','scanner']
+  admin:    ['dashboard','events','orders','scanner','users','payments'],
+  vendedor: ['orders','scanner']
 };
 
 const MENU_ITEMS = [
@@ -20,7 +18,6 @@ const MENU_ITEMS = [
   { id:'scanner',   label:'Validar QR',        icon:'📷', section:'Operación' },
   { id:'users',     label:'Usuarios',          icon:'👥', section:'Configuración' },
   { id:'payments',  label:'Pagos / MP',        icon:'💳', section:'Configuración' },
-  { id:'roles',     label:'Permisos y Roles',  icon:'🔐', section:'Configuración' },
 ];
 
 // ══════════════════════════════════════════
@@ -469,8 +466,8 @@ function buildAdminUI() {
   document.getElementById('logout-btn').classList.remove('hidden');
   document.getElementById('mobile-logout-link')?.classList.remove('hidden');
   document.getElementById('admin-nav-link').style.display='none';
-  const roleBadge={superadmin:'🔐 Superadmin',admin:'⚙️ Admin',vendedor:'🏷️ Vendedor'};
-  document.getElementById('sidebar-user').innerHTML=`<strong>${u.name}</strong><br><span style="font-size:.72rem;opacity:.7">${roleBadge[u.role]||u.role}</span>`;
+  const roleBadge = u.role==='admin' ? (u.event_id ? '⚙️ Admin de evento' : '🔐 Admin general') : '🏷️ Vendedor';
+  document.getElementById('sidebar-user').innerHTML=`<strong>${u.name}</strong><br><span style="font-size:.72rem;opacity:.7">${roleBadge}</span>`;
 
   const perms=PERMISOS[u.role]||[];
   let html='', currentSection='';
@@ -488,7 +485,7 @@ function adminSection(s) {
   document.querySelectorAll('.sidebar-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('si-'+s)?.classList.add('active');
   const main=document.getElementById('admin-main');
-  ({dashboard:renderDashboard,events:renderAdminEvents,orders:renderAdminOrders,scanner:renderScanner,users:renderAdminUsers,payments:renderPaymentsConfig,roles:renderRolesPanel})[s]?.(main);
+  ({dashboard:renderDashboard,events:renderAdminEvents,orders:renderAdminOrders,scanner:renderScanner,users:renderAdminUsers,payments:renderPaymentsConfig})[s]?.(main);
 }
 
 // ══════════════════════════════════════════
@@ -538,10 +535,11 @@ async function renderAdminEvents(c) {
     return;
   }
   const canEdit=can('events');
+  const global=isGlobalAdminUser();
   window._events=events;
   c.innerHTML=`<div class="admin-header-row">
     <div class="admin-page-title" style="margin:0">Gestión de Eventos</div>
-    ${canEdit?`<button class="btn btn-primary" onclick="showCreateEventModal()">+ Nuevo Evento</button>`:''}
+    ${global?`<button class="btn btn-primary" onclick="showCreateEventModal()">+ Nuevo Evento</button>`:''}
   </div>
   <div class="table-card"><div style="overflow-x:auto"><table class="tbl">
     <thead><tr><th>Evento</th><th>Fecha</th><th>Etapas</th><th>Vendido</th><th>Estado</th><th>Acciones</th></tr></thead>
@@ -985,54 +983,67 @@ function renderScanner(c) {
 // ══════════════════════════════════════════
 // USERS
 // ══════════════════════════════════════════
+function isGlobalAdminUser() {
+  return state.currentAdmin?.role==='admin' && !state.currentAdmin?.event_id;
+}
+
 async function renderAdminUsers(c) {
-  const isSA=state.currentAdmin?.role==='superadmin';
-  const isA=state.currentAdmin?.role==='admin';
+  const global = isGlobalAdminUser();
   let users=[];
   try{users=await API.getUsers();}catch(e){
     console.error('Error cargando usuarios:', e);
     c.innerHTML=`<div class="admin-page-title">Gestión de Usuarios</div><div class="alert alert-danger">No se pudieron cargar los usuarios: ${e.message||'error de conexión'}</div>`;
     return;
   }
-  const visible=isSA?users:users.filter(u=>u.role!=='superadmin');
   window._users=users;
   c.innerHTML=`<div class="admin-header-row">
     <div class="admin-page-title" style="margin:0">Gestión de Usuarios</div>
-    ${(isSA||isA)?`<button class="btn btn-primary" onclick="showCreateUserModal()">+ Nuevo Usuario</button>`:''}
+    <button class="btn btn-primary" onclick="showCreateUserModal()">+ Nuevo Usuario</button>
   </div>
   <div class="table-card"><div style="overflow-x:auto"><table class="tbl">
-    <thead><tr><th>Usuario</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
-    <tbody>${visible.map(u=>`<tr>
+    <thead><tr><th>Usuario</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Evento</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody>${users.map(u=>`<tr>
       <td><strong>${u.username}</strong></td><td>${u.name}</td>
       <td style="font-size:.82rem">${u.email||'–'}</td>
-      <td><span class="badge badge-${u.role}">${{superadmin:'🔐 Superadmin',admin:'⚙️ Admin',vendedor:'🏷️ Vendedor'}[u.role]||u.role}</span></td>
+      <td><span class="badge badge-${u.role}">${{admin:'⚙️ Admin',vendedor:'🏷️ Vendedor'}[u.role]||u.role}</span></td>
+      <td style="font-size:.82rem">${u.event_title || (u.role==='admin'&&!u.event_id?'<em>Global</em>':'—')}</td>
       <td><span class="badge ${u.active?'badge-active':'badge-inactive'}">${u.active?'Activo':'Inactivo'}</span></td>
       <td><div style="display:flex;gap:.4rem">
-        ${isSA?`<button class="btn btn-secondary btn-sm" onclick="showEditUserModal(${u.id})">Editar</button>`:''}
+        ${(global || u.role==='vendedor')?`<button class="btn btn-secondary btn-sm" onclick="showEditUserModal(${u.id})">Editar</button>`:''}
         <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})"
           ${u.id===state.currentAdmin?.id?'disabled title="No podés eliminarte"':''}>Eliminar</button>
       </div></td>
-    </tr>`).join('')||'<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">Sin usuarios</td></tr>'}
+    </tr>`).join('')||'<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--gray-400)">Sin usuarios</td></tr>'}
     </tbody></table></div></div>`;
 }
 
-function showCreateUserModal() {
-  const isSA=state.currentAdmin?.role==='superadmin';
+async function showCreateUserModal() {
+  const global = isGlobalAdminUser();
+  let eventOptions = '';
+  if (global) {
+    let events=[];
+    try{ events = (await API.getAllEvents()).filter(e=>e.active); }
+    catch(e){ console.error('Error cargando eventos:', e); return alert('No se pudieron cargar los eventos: '+(e.message||'error de conexión')); }
+    window._nuEvents = events;
+    eventOptions = events.map(e=>`<option value="${e.id}">${e.emoji||''} ${e.title}</option>`).join('');
+  }
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Nuevo Usuario</div>
+    <div id="nu-error" class="alert alert-danger hidden"></div>
     <div class="form-group"><label>Nombre completo *</label><input id="nu-name" placeholder="Juan García"></div>
     <div class="form-row">
       <div class="form-group"><label>Usuario *</label><input id="nu-user" placeholder="jgarcia"></div>
       <div class="form-group"><label>Contraseña *</label><input id="nu-pass" type="password" placeholder="••••••••"></div>
     </div>
     <div class="form-group"><label>Email</label><input id="nu-email" type="email" placeholder="juan@email.com"></div>
-    <div class="form-group"><label>Rol *</label><select id="nu-role">
-      <option value="vendedor">🏷️ Vendedor — Solo órdenes y QR</option>
-      <option value="admin">⚙️ Admin — Eventos, órdenes, usuarios</option>
-      ${isSA?'<option value="superadmin">🔐 Superadmin — Acceso total</option>':''}
+    ${global?`<div class="form-group"><label>Rol *</label><select id="nu-role">
+      <option value="vendedor">🏷️ Vendedor — Órdenes y QR de su evento</option>
+      <option value="admin">⚙️ Admin — Gestiona un evento completo</option>
     </select></div>
+    <div class="form-group"><label>Evento *</label><select id="nu-event">${eventOptions}</select></div>`
+    :`<p style="font-size:.85rem;color:var(--gray-600);margin-bottom:1rem">Se va a crear como <strong>vendedor</strong> de tu evento (${state.currentAdmin?.event_title||'el tuyo'}).</p>`}
     <div class="modal-footer">
-      <button class="btn btn-primary" onclick="createUser()">Crear</button>
+      <button class="btn btn-primary" id="nu-submit-btn" onclick="createUser()">Crear</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
     </div>`;
   openModal();
@@ -1042,52 +1053,54 @@ function showEditUserModal(id) {
   const u=(window._users||[]).find(x=>x.id===id)||{};
   document.getElementById('modal-box').innerHTML=`
     <div class="modal-title">Editar: ${u.username}</div>
+    <div id="eu-error" class="alert alert-danger hidden"></div>
     <div class="form-group"><label>Nombre</label><input id="eu-name" value="${u.name||''}"></div>
     <div class="form-group"><label>Email</label><input id="eu-email" type="email" value="${u.email||''}"></div>
     <div class="form-group"><label>Nueva contraseña <small style="color:var(--gray-400)">(vacío = no cambia)</small></label><input id="eu-pass" type="password"></div>
-    <div class="form-group"><label>Rol</label><select id="eu-role">
-      <option value="vendedor" ${u.role==='vendedor'?'selected':''}>🏷️ Vendedor</option>
-      <option value="admin" ${u.role==='admin'?'selected':''}>⚙️ Admin</option>
-      <option value="superadmin" ${u.role==='superadmin'?'selected':''}>🔐 Superadmin</option>
-    </select></div>
     <div class="form-group"><label>Estado</label><select id="eu-active">
       <option value="1" ${u.active?'selected':''}>Activo</option>
       <option value="0" ${!u.active?'selected':''}>Inactivo</option>
     </select></div>
     <div class="modal-footer">
-      <button class="btn btn-primary" onclick="updateUser(${id})">Guardar</button>
+      <button class="btn btn-primary" id="eu-submit-btn" onclick="updateUser(${id})">Guardar</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
     </div>`;
   openModal();
 }
 
 async function updateUser(id) {
+  const errEl = document.getElementById('eu-error');
+  if(errEl) errEl.classList.add('hidden');
   const name=document.getElementById('eu-name').value.trim();
   const email=document.getElementById('eu-email').value.trim();
   const pass=document.getElementById('eu-pass').value;
-  const role=document.getElementById('eu-role').value;
   const active=parseInt(document.getElementById('eu-active').value);
   try{
-    await API.updateUser(id,{name,email,role,active,...(pass?{password:pass}:{})});
+    await API.updateUser(id,{name,email,active,...(pass?{password:pass}:{})});
   }catch(e){
     console.error('Error actualizando usuario:', e);
-    return alert('Error: ' + (e.message || 'no se pudo actualizar el usuario'));
+    return showModalError(errEl, 'Error: ' + (e.message || 'no se pudo actualizar el usuario'));
   }
   closeModal(); renderAdminUsers(document.getElementById('admin-main'));
 }
 
 async function createUser() {
+  const errEl = document.getElementById('nu-error');
+  if(errEl) errEl.classList.add('hidden');
   const name=document.getElementById('nu-name').value.trim();
   const username=document.getElementById('nu-user').value.trim();
   const password=document.getElementById('nu-pass').value;
   const email=document.getElementById('nu-email').value.trim();
-  const role=document.getElementById('nu-role').value;
-  if(!name||!username||!password) return alert('Nombre, usuario y contraseña son obligatorios');
+  const global = isGlobalAdminUser();
+  const role = global ? document.getElementById('nu-role').value : 'vendedor';
+  const event_id = global ? parseInt(document.getElementById('nu-event').value) : undefined;
+  if(!name||!username||!password) return showModalError(errEl,'Nombre, usuario y contraseña son obligatorios');
+  if(global && !event_id) return showModalError(errEl,'Elegí a qué evento pertenece');
   try{
-    await API.createUser({name,username,password,email,role});
+    await API.createUser({name,username,password,email,role,...(event_id?{event_id}:{})});
   }catch(e){
     console.error('Error creando usuario:', e);
-    return alert('Error: ' + (e.message || 'no se pudo crear el usuario'));
+    return showModalError(errEl, 'Error: ' + (e.message || 'no se pudo crear el usuario'));
   }
   closeModal(); renderAdminUsers(document.getElementById('admin-main')); alert('Usuario creado');
 }
@@ -1102,74 +1115,6 @@ async function deleteUser(id) {
     return alert('Error: ' + (e.message || 'no se pudo eliminar el usuario'));
   }
   renderAdminUsers(document.getElementById('admin-main'));
-}
-
-// ══════════════════════════════════════════
-// ROLES PANEL
-// ══════════════════════════════════════════
-async function renderRolesPanel(c) {
-  let users=[];
-  try{ users=await API.getUsers(); }catch(e){
-    console.error('Error cargando usuarios:', e);
-    c.innerHTML=`<div class="admin-page-title">Permisos y Roles</div><div class="alert alert-danger">No se pudieron cargar los usuarios: ${e.message||'error de conexión'}</div>`;
-    return;
-  }
-  window._users=users;
-  const rolesInfo=[
-    {role:'superadmin',icon:'🔐',label:'Superadmin',color:'var(--blue)',
-     desc:'Acceso total. Puede asignar y modificar roles de cualquier usuario.',
-     perms:['Dashboard y estadísticas','Gestión de eventos y etapas de precios','Ver y confirmar todas las órdenes','Validar entradas en la puerta (QR)','Crear/editar/desactivar usuarios','Configurar Mercado Pago','Gestionar roles y permisos']},
-    {role:'admin',icon:'⚙️',label:'Admin',color:'var(--blue-light)',
-     desc:'Administrador operativo. Gestiona eventos y usuarios vendedores.',
-     perms:['Dashboard y estadísticas','Gestión de eventos y etapas de precios','Ver y confirmar todas las órdenes','Validar entradas en la puerta (QR)','Crear/editar usuarios vendedores']},
-    {role:'vendedor',icon:'🏷️',label:'Vendedor',color:'var(--gray-600)',
-     desc:'Operador de venta. Acceso mínimo para el día del evento.',
-     perms:['Ver órdenes de compra','Validar entradas en la puerta (QR)']}
-  ];
-  c.innerHTML=`<div class="admin-page-title">Permisos y Roles</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;margin-bottom:2rem">
-      ${rolesInfo.map(r=>`<div style="background:var(--white);border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow:hidden;border-top:4px solid ${r.color}">
-        <div style="padding:1.5rem">
-          <div style="font-size:2rem;margin-bottom:.5rem">${r.icon}</div>
-          <h3 style="font-size:1.05rem;color:var(--blue);margin-bottom:.4rem">${r.label}</h3>
-          <p style="font-size:.82rem;color:var(--gray-600);margin-bottom:1rem">${r.desc}</p>
-          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-400);margin-bottom:.4rem">Puede hacer:</div>
-          <ul style="list-style:none;padding:0">${r.perms.map(p=>`<li style="font-size:.8rem;color:var(--gray-800);padding:.2rem 0;display:flex;align-items:flex-start;gap:.4rem"><span style="color:var(--success);margin-top:.1rem">✓</span>${p}</li>`).join('')}</ul>
-        </div>
-      </div>`).join('')}
-    </div>
-    <div class="table-card">
-      <div class="table-toolbar"><h3>Asignar rol a usuario</h3></div>
-      <div style="overflow-x:auto"><table class="tbl">
-        <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol actual</th><th>Nuevo rol</th><th></th></tr></thead>
-        <tbody>${users.filter(u=>u.active).map(u=>`<tr>
-          <td><strong>${u.username}</strong></td><td>${u.name}</td>
-          <td><span class="badge badge-${u.role}">${{superadmin:'🔐 Superadmin',admin:'⚙️ Admin',vendedor:'🏷️ Vendedor'}[u.role]||u.role}</span></td>
-          <td><select id="rs-${u.id}" style="padding:6px 10px;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.85rem;font-family:'Figtree',sans-serif">
-            <option value="vendedor" ${u.role==='vendedor'?'selected':''}>🏷️ Vendedor</option>
-            <option value="admin" ${u.role==='admin'?'selected':''}>⚙️ Admin</option>
-            <option value="superadmin" ${u.role==='superadmin'?'selected':''}>🔐 Superadmin</option>
-          </select></td>
-          <td><button class="btn btn-blue btn-sm" onclick="assignRole(${u.id})"
-            ${u.id===state.currentAdmin?.id?'disabled title="No podés cambiarte a vos mismo"':''}>Asignar</button></td>
-        </tr>`).join('')}
-        </tbody></table></div>
-    </div>`;
-}
-
-async function assignRole(userId) {
-  const newRole=document.getElementById('rs-'+userId).value;
-  const u=(window._users||[]).find(x=>x.id===userId); if(!u) return;
-  const rLabel={superadmin:'Superadmin',admin:'Admin',vendedor:'Vendedor'};
-  if(!confirm(`¿Cambiar el rol de "${u.name}" a ${rLabel[newRole]}?`)) return;
-  try{
-    await API.updateUser(userId,{role:newRole});
-  }catch(e){
-    console.error('Error asignando rol:', e);
-    return alert('Error: ' + (e.message || 'no se pudo actualizar el rol'));
-  }
-  await renderRolesPanel(document.getElementById('admin-main'));
-  alert(`✅ Rol actualizado: ${u.name} → ${rLabel[newRole]}`);
 }
 
 // ══════════════════════════════════════════

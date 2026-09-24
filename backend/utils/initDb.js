@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- event_id NULL = admin global (sin restricción); con valor = atado a ese evento.
+-- Se agrega por separado (no en el CREATE TABLE) porque events todavía no existe
+-- en este punto del script y hay una referencia circular users<->events.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS event_id INTEGER;
+
 CREATE TABLE IF NOT EXISTS events (
   id SERIAL PRIMARY KEY,
   title TEXT NOT NULL,
@@ -94,6 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_tickets_code ON tickets(code);
 CREATE INDEX IF NOT EXISTS idx_tickets_order ON tickets(order_id);
 CREATE INDEX IF NOT EXISTS idx_orders_event ON orders(event_id);
 CREATE INDEX IF NOT EXISTS idx_stages_event ON ticket_stages(event_id);
+CREATE INDEX IF NOT EXISTS idx_users_event ON users(event_id);
 `;
 
 async function main() {
