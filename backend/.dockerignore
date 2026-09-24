@@ -1,6 +1,0 @@
-node_modules
-database
-.env
-.env.example
-*.log
-.git

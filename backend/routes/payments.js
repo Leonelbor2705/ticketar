@@ -132,7 +132,7 @@ router.get('/dashboard', auth, adminOnly, async (req, res) => {
         SUM(CASE WHEN payment_status='paid' THEN 1 ELSE 0 END) as paid_orders,
         SUM(CASE WHEN payment_status='pending' THEN 1 ELSE 0 END) as pending_orders,
         SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END) as total_revenue,
-        SUM(CASE WHEN payment_status='paid' AND date(created_at)=date('now') THEN total ELSE 0 END) as today_revenue
+        SUM(CASE WHEN payment_status='paid' AND created_at::date = CURRENT_DATE THEN total ELSE 0 END) as today_revenue
       FROM orders
     `);
 

@@ -95,7 +95,7 @@ app.listen(PORT, () => {
   ║  http://localhost:${PORT}           ║
   ╚══════════════════════════════════╝
   Entorno: ${process.env.NODE_ENV || 'development'}
-  DB: ${process.env.DB_PATH || './database/ticketar.db'}
+  DB: Postgres (${process.env.DATABASE_URL ? 'conectada' : '⚠️  DATABASE_URL no configurada'})
   `);
 });
 

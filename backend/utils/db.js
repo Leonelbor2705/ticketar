@@ -1,36 +1,43 @@
 // utils/db.js
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
+const { Pool } = require('pg');
 
-const dbPath = process.env.DB_PATH || './database/ticketar.db';
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) { console.error('Error abriendo DB:', err); process.exit(1); }
-  console.log('✅ Base de datos conectada:', dbPath);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
-db.run('PRAGMA foreign_keys = ON');
-db.run('PRAGMA journal_mode = WAL');
+pool.on('connect', () => console.log('✅ Base de datos conectada (Postgres)'));
+pool.on('error', (err) => console.error('Error inesperado en el pool de Postgres:', err));
 
-// Migración ligera: agrega columnas nuevas a bases ya existentes sin perder datos.
-// ALTER TABLE ADD COLUMN falla si la columna ya existe — se ignora ese error puntual.
-db.run('ALTER TABLE orders ADD COLUMN congregacion TEXT', (err) => {
-  if (err && !/duplicate column/i.test(err.message)) console.error('Migración congregacion:', err.message);
-});
+// Las rutas escriben SQL con placeholders `?` (estilo sqlite). Postgres usa $1, $2...
+// — se convierten acá para no tener que reescribir cada query de routes/*.js.
+function toPgSql(sql) {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
 
-// Promisify helpers
-const dbGet = (sql, params = []) =>
-  new Promise((res, rej) => db.get(sql, params, (e, row) => e ? rej(e) : res(row)));
+const dbGet = async (sql, params = []) => {
+  const { rows } = await pool.query(toPgSql(sql), params);
+  return rows[0];
+};
 
-const dbAll = (sql, params = []) =>
-  new Promise((res, rej) => db.all(sql, params, (e, rows) => e ? rej(e) : res(rows)));
+const dbAll = async (sql, params = []) => {
+  const { rows } = await pool.query(toPgSql(sql), params);
+  return rows;
+};
 
-const dbRun = (sql, params = []) =>
-  new Promise((res, rej) =>
-    db.run(sql, params, function(e) { e ? rej(e) : res({ lastID: this.lastID, changes: this.changes }); })
-  );
+// Las rutas leen result.lastID tras un INSERT (patrón sqlite3). Como todas las
+// tablas tienen columna `id`, se agrega RETURNING id automáticamente para
+// emularlo sin tener que tocar cada INSERT de routes/*.js.
+const dbRun = async (sql, params = []) => {
+  const isInsert = /^\s*insert/i.test(sql);
+  let pgSql = toPgSql(sql);
+  if (isInsert && !/returning/i.test(pgSql)) pgSql += ' RETURNING id';
+  const result = await pool.query(pgSql, params);
+  return {
+    lastID: isInsert ? result.rows[0]?.id : undefined,
+    changes: result.rowCount
+  };
+};
 
-module.exports = { db, dbGet, dbAll, dbRun };
+module.exports = { pool, dbGet, dbAll, dbRun };
