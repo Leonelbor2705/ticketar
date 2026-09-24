@@ -761,7 +761,11 @@ async function submitEditEvent(id) {
 // ORDERS
 // ══════════════════════════════════════════
 async function renderAdminOrders(c) {
-  c.innerHTML=`<div class="admin-page-title">Órdenes de Compra</div>
+  const canRegister = can('orders');
+  c.innerHTML=`<div class="admin-header-row">
+    <div class="admin-page-title" style="margin:0">Órdenes de Compra</div>
+    ${canRegister?`<button class="btn btn-primary" onclick="showManualOrderModal()">+ Inscripción manual</button>`:''}
+  </div>
     <div class="table-card">
       <div class="table-toolbar"><h3>Todas las órdenes</h3>
         <input class="search-input" placeholder="Buscar..." style="width:220px" oninput="filterOrders(this.value)">
@@ -789,7 +793,7 @@ function paintOrders(orders) {
         <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem">${o.event_title||''}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">${o.congregacion||'—'}</td>
         <td><strong>$${(o.total||0).toLocaleString('es-AR')}</strong></td>
-        <td style="font-size:.8rem">${{mp:'MP QR',card:'Tarjeta',transfer:'Transf.'}[o.payment_method]||'—'}</td>
+        <td style="font-size:.8rem">${{mp:'MP QR',card:'Tarjeta',transfer:'Transf.',manual:'Manual'}[o.payment_method]||'—'}</td>
         <td><span class="badge badge-${o.payment_status}">${{paid:'Pagado',pending:'Pendiente',failed:'Fallido'}[o.payment_status]||o.payment_status}</span></td>
         <td style="font-size:.78rem;color:var(--gray-600)">${(o.created_at||'').split('T')[0]}</td>
         ${cc?`<td>${o.payment_status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmPago('${o.id}')">✓ Confirmar</button>`:''}</td>`:''}
@@ -799,6 +803,139 @@ function paintOrders(orders) {
 
 function filterOrders(q) {
   document.querySelectorAll('#orders-tbl tbody tr[data-s]').forEach(tr=>{tr.style.display=tr.dataset.s.includes(q.toLowerCase())?'':'none';});
+}
+
+// ══════════════════════════════════════════
+// INSCRIPCIÓN MANUAL — admin/vendedor registran una venta en persona (efectivo, etc.)
+// ══════════════════════════════════════════
+let _moCongregacionSelected = '';
+
+async function showManualOrderModal() {
+  let events=[];
+  try{ events = await API.getAllEvents(); }
+  catch(e){ console.error('Error cargando eventos:', e); return alert('No se pudieron cargar los eventos: '+(e.message||'error de conexión')); }
+  const activeEvents = events.filter(e=>e.active);
+  if(!activeEvents.length) return alert('No hay eventos activos para inscribir');
+  window._moEvents = activeEvents;
+  _moCongregacionSelected = '';
+
+  document.getElementById('modal-box').innerHTML = `
+    <div class="modal-title">Inscripción manual</div>
+    <div id="mo-error" class="alert alert-danger hidden"></div>
+    <p style="font-size:.85rem;color:var(--gray-600);margin-bottom:1rem">Para ventas en persona (efectivo, etc.) — la orden queda registrada como pagada al instante.</p>
+    <div class="form-group"><label>Evento *</label>
+      <select id="mo-event" onchange="onManualOrderEventChange()">
+        ${activeEvents.map(e=>`<option value="${e.id}">${e.emoji||''} ${e.title}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Etapa *</label><select id="mo-stage"></select></div>
+      <div class="form-group"><label>Cantidad *</label><input id="mo-qty" type="number" min="1" value="1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Nombre *</label><input id="mo-nombre" placeholder="Juan"></div>
+      <div class="form-group"><label>Apellido *</label><input id="mo-apellido" placeholder="García"></div>
+    </div>
+    <div class="form-group"><label>Email *</label><input id="mo-email" type="email" placeholder="juan@email.com"></div>
+    <div class="form-group"><label>Teléfono</label><input id="mo-tel" type="tel"></div>
+    <div id="mo-congregacion-wrap" class="hidden"></div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="mo-submit-btn" onclick="submitManualOrder()">Registrar inscripción</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+    </div>`;
+  openModal();
+  onManualOrderEventChange();
+}
+
+function onManualOrderEventChange() {
+  const evId = parseInt(document.getElementById('mo-event').value);
+  const ev = (window._moEvents||[]).find(e=>e.id===evId);
+  const stageSel = document.getElementById('mo-stage');
+  const stages = (ev?.stages||[]).filter(s=>s.active && (s.quantity-s.sold)>0);
+  stageSel.innerHTML = stages.length
+    ? stages.map(s=>`<option value="${s.id}">${s.name} — $${(s.price||0).toLocaleString('es-AR')} (${s.quantity-s.sold} disp.)</option>`).join('')
+    : '<option value="">Sin etapas con stock disponible</option>';
+  renderManualOrderCongregacion(ev);
+}
+
+async function renderManualOrderCongregacion(ev) {
+  const wrap = document.getElementById('mo-congregacion-wrap');
+  _moCongregacionSelected = '';
+  if (!eventNeedsCongregacion(ev)) { wrap.classList.add('hidden'); wrap.innerHTML=''; return; }
+
+  if (!_congregaciones) {
+    try { const res = await fetch('data/congregaciones.json'); _congregaciones = await res.json(); }
+    catch(e){ console.error('Error cargando congregaciones:', e); _congregaciones=[]; }
+  }
+
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `
+    <label>Congregación *</label>
+    <div class="combo-wrap">
+      <input id="mo-congregacion-input" type="text" autocomplete="off" placeholder="Buscá la congregación...">
+      <div id="mo-congregacion-list" class="combo-list hidden"></div>
+    </div>`;
+
+  const input = document.getElementById('mo-congregacion-input');
+  const list = document.getElementById('mo-congregacion-list');
+  const renderList = (items) => {
+    list.innerHTML = items.length
+      ? items.map(x=>`<div class="combo-item" data-val="${x.replace(/"/g,'&quot;')}">${x}</div>`).join('')
+      : '<div class="combo-empty">Sin resultados</div>';
+    list.classList.remove('hidden');
+  };
+  input.addEventListener('focus', ()=>renderList(_congregaciones));
+  input.addEventListener('input', ()=>{
+    _moCongregacionSelected='';
+    const q = input.value.toLowerCase().trim();
+    renderList(q ? _congregaciones.filter(x=>x.toLowerCase().includes(q)) : _congregaciones);
+  });
+  list.addEventListener('click', (ev2)=>{
+    const item = ev2.target.closest('.combo-item'); if(!item) return;
+    _moCongregacionSelected = item.dataset.val;
+    input.value = _moCongregacionSelected;
+    list.classList.add('hidden');
+  });
+}
+
+async function submitManualOrder() {
+  const errEl = document.getElementById('mo-error');
+  if(errEl) errEl.classList.add('hidden');
+  const btn = document.getElementById('mo-submit-btn');
+  try {
+    const eventId = parseInt(document.getElementById('mo-event').value);
+    const stageId = parseInt(document.getElementById('mo-stage').value);
+    const qty = parseInt(document.getElementById('mo-qty').value);
+    const nombre = document.getElementById('mo-nombre').value.trim();
+    const apellido = document.getElementById('mo-apellido').value.trim();
+    const email = document.getElementById('mo-email').value.trim();
+    const tel = document.getElementById('mo-tel').value.trim();
+    const ev = (window._moEvents||[]).find(e=>e.id===eventId);
+
+    if(!eventId||!stageId||!qty||qty<1) return showModalError(errEl,'Completá evento, etapa y cantidad');
+    if(!nombre||!apellido||!email) return showModalError(errEl,'Completá nombre, apellido y email');
+    if(!email.match(/^[^@]+@[^@]+\.[^@]+$/)) return showModalError(errEl,'Email inválido');
+    if(eventNeedsCongregacion(ev) && !_moCongregacionSelected) return showModalError(errEl,'Seleccioná la congregación de la lista');
+
+    if(btn){btn.disabled=true;btn.textContent='Registrando...';}
+    const order = await API.createManualOrder({
+      event_id: eventId, buyer_name: nombre, buyer_lastname: apellido,
+      buyer_email: email, buyer_phone: tel||null, congregacion: _moCongregacionSelected||null,
+      items: [{stage_id: stageId, qty}]
+    });
+    closeModal();
+    alert(`Inscripción registrada: orden ${order.order_id} (${order.tickets.length} entrada/s)`);
+    await renderAdminOrders(document.getElementById('admin-main'));
+  } catch(e) {
+    console.error('Error en inscripción manual:', e);
+    showModalError(errEl, 'Error: '+(e.message||'no se pudo registrar'));
+    if(btn){btn.disabled=false;btn.textContent='Registrar inscripción';}
+  }
+}
+
+function showModalError(errEl, msg) {
+  if(errEl){ errEl.textContent = msg; errEl.classList.remove('hidden'); }
+  else alert(msg);
 }
 async function confirmPago(id) {
   if(!confirm(`¿Confirmar pago de la orden ${id}?`)) return;

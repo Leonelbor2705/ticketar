@@ -42,6 +42,7 @@ const API = (() => {
 
     // Orders
     createOrder: (d) => req('POST', '/orders', d),
+    createManualOrder: (d) => req('POST', '/orders/manual', d),
     getOrders: (params = {}) => {
       const q = new URLSearchParams(params).toString();
       return req('GET', '/orders' + (q ? '?' + q : ''));

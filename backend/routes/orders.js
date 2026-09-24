@@ -7,7 +7,64 @@ const { dbGet, dbAll, dbRun } = require('../utils/db');
 const { auth } = require('../middleware/auth');
 const { sendTicketEmail } = require('../utils/mailer');
 
-// POST /api/orders — Público: crear orden
+// Lógica compartida: valida stock, crea la orden y emite los tickets.
+// Usada tanto por el checkout público (pago pendiente) como por la inscripción
+// manual de admin/vendedor (se marca pagada al instante).
+async function createOrderAndTickets({ event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, items, payment_method, payment_status }) {
+  const event = await dbGet('SELECT * FROM events WHERE id = ? AND active = 1', [event_id]);
+  if (!event) { const err = new Error('Evento no encontrado'); err.status = 404; throw err; }
+
+  let total = 0;
+  const validatedItems = [];
+  for (const item of items) {
+    const stage = await dbGet(
+      'SELECT * FROM ticket_stages WHERE id = ? AND event_id = ? AND active = 1',
+      [item.stage_id, event_id]
+    );
+    if (!stage) { const err = new Error(`Etapa ${item.stage_id} no válida`); err.status = 400; throw err; }
+    const avail = stage.quantity - stage.sold;
+    if (item.qty < 1 || item.qty > avail) { const err = new Error(`Stock insuficiente para "${stage.name}": disponible ${avail}`); err.status = 400; throw err; }
+    if (item.qty > 10) { const err = new Error('Máximo 10 entradas por etapa por orden'); err.status = 400; throw err; }
+    total += stage.price * item.qty;
+    validatedItems.push({ ...item, stage, price: stage.price });
+  }
+
+  const orderId = 'ORD-' + uuidv4().substring(0, 8).toUpperCase();
+  await dbRun(
+    `INSERT INTO orders (id, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, total, payment_method, payment_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [orderId, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone || null, congregacion || null, total, payment_method, payment_status]
+  );
+
+  const tickets = [];
+  for (const item of validatedItems) {
+    for (let i = 0; i < item.qty; i++) {
+      const code = 'TK-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      const qrData = JSON.stringify({
+        code, order: orderId,
+        buyer: `${buyer_name} ${buyer_lastname}`,
+        event: event.title, stage: item.stage.name,
+        date: event.date, venue: event.venue
+      });
+      const qrImage = await QRCode.toDataURL(qrData, { errorCorrectionLevel: 'H', width: 300 });
+
+      await dbRun(
+        `INSERT INTO tickets (order_id, stage_id, stage_name, code, buyer_name, buyer_lastname,
+         event_title, event_date, event_venue, price, qr_data)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderId, item.stage_id, item.stage.name, code, buyer_name, buyer_lastname,
+         event.title, event.date, event.venue, item.price, qrImage]
+      );
+
+      await dbRun('UPDATE ticket_stages SET sold = sold + 1 WHERE id = ?', [item.stage_id]);
+      tickets.push({ code, stage: item.stage.name, price: item.price, qr_image: qrImage });
+    }
+  }
+
+  return { orderId, total, tickets, event };
+}
+
+// POST /api/orders — Público: crear orden (pago pendiente hasta confirmarse)
 router.post('/', async (req, res) => {
   try {
     const { event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, items, payment_method, congregacion } = req.body;
@@ -15,66 +72,13 @@ router.post('/', async (req, res) => {
     if (!event_id || !buyer_name || !buyer_lastname || !buyer_email || !items?.length)
       return res.status(400).json({ error: 'Datos incompletos' });
 
-    const event = await dbGet('SELECT * FROM events WHERE id = ? AND active = 1', [event_id]);
-    if (!event) return res.status(404).json({ error: 'Evento no encontrado' });
-
-    // Validate stock and calculate total
-    let total = 0;
-    const validatedItems = [];
-    for (const item of items) {
-      const stage = await dbGet(
-        'SELECT * FROM ticket_stages WHERE id = ? AND event_id = ? AND active = 1',
-        [item.stage_id, event_id]
-      );
-      if (!stage) return res.status(400).json({ error: `Etapa ${item.stage_id} no válida` });
-      const avail = stage.quantity - stage.sold;
-      if (item.qty < 1 || item.qty > avail)
-        return res.status(400).json({ error: `Stock insuficiente para "${stage.name}": disponible ${avail}` });
-      if (item.qty > 10)
-        return res.status(400).json({ error: 'Máximo 10 entradas por etapa por orden' });
-      total += stage.price * item.qty;
-      validatedItems.push({ ...item, stage, price: stage.price });
-    }
-
-    const orderId = 'ORD-' + uuidv4().substring(0, 8).toUpperCase();
-    await dbRun(
-      `INSERT INTO orders (id, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, total, payment_method, payment_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone || null, congregacion || null, total, payment_method || 'mp',
-       payment_method === 'transfer' ? 'pending' : 'pending']
-    );
-
-    // Create tickets
-    const tickets = [];
-    for (const item of validatedItems) {
-      for (let i = 0; i < item.qty; i++) {
-        const code = 'TK-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-        const qrData = JSON.stringify({
-          code, order: orderId,
-          buyer: `${buyer_name} ${buyer_lastname}`,
-          event: event.title, stage: item.stage.name,
-          date: event.date, venue: event.venue
-        });
-        const qrImage = await QRCode.toDataURL(qrData, { errorCorrectionLevel: 'H', width: 300 });
-
-        await dbRun(
-          `INSERT INTO tickets (order_id, stage_id, stage_name, code, buyer_name, buyer_lastname,
-           event_title, event_date, event_venue, price, qr_data)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [orderId, item.stage_id, item.stage.name, code, buyer_name, buyer_lastname,
-           event.title, event.date, event.venue, item.price, qrImage]
-        );
-
-        // Update sold count
-        await dbRun('UPDATE ticket_stages SET sold = sold + 1 WHERE id = ?', [item.stage_id]);
-        tickets.push({ code, stage: item.stage.name, price: item.price, qr_image: qrImage });
-      }
-    }
-
-    const order = { id: orderId, total, tickets, event, buyer: `${buyer_name} ${buyer_lastname}` };
+    const { orderId, total, tickets, event } = await createOrderAndTickets({
+      event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, items,
+      payment_method: payment_method || 'mp', payment_status: 'pending'
+    });
 
     // Send email async (don't block response)
-    sendTicketEmail({ order, tickets, event, buyer_email, buyer_name, buyer_lastname }).catch(console.error);
+    sendTicketEmail({ order: { id: orderId, total, tickets, event, buyer: `${buyer_name} ${buyer_lastname}` }, tickets, event, buyer_email, buyer_name, buyer_lastname }).catch(console.error);
 
     res.status(201).json({
       order_id: orderId,
@@ -84,7 +88,37 @@ router.post('/', async (req, res) => {
     });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Error del servidor' });
+    res.status(e.status || 500).json({ error: e.status ? e.message : 'Error del servidor' });
+  }
+});
+
+// POST /api/orders/manual — Admin/vendedor: inscripción manual (efectivo, en persona), queda pagada al instante
+router.post('/manual', auth, async (req, res) => {
+  try {
+    if (!['admin', 'vendedor'].includes(req.user.role))
+      return res.status(403).json({ error: 'No tenés permiso para registrar inscripciones' });
+
+    const { event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, items, congregacion } = req.body;
+
+    if (!event_id || !buyer_name || !buyer_lastname || !buyer_email || !items?.length)
+      return res.status(400).json({ error: 'Datos incompletos' });
+
+    const { orderId, total, tickets, event } = await createOrderAndTickets({
+      event_id, buyer_name, buyer_lastname, buyer_email, buyer_phone, congregacion, items,
+      payment_method: 'manual', payment_status: 'paid'
+    });
+
+    sendTicketEmail({ order: { id: orderId, total, tickets, event, buyer: `${buyer_name} ${buyer_lastname}` }, tickets, event, buyer_email, buyer_name, buyer_lastname }).catch(console.error);
+
+    res.status(201).json({
+      order_id: orderId,
+      total,
+      tickets,
+      message: 'Inscripción registrada y marcada como pagada.'
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(e.status || 500).json({ error: e.status ? e.message : 'Error del servidor' });
   }
 });
 
